@@ -100,7 +100,10 @@ R('GET', '/setup/status', async () => {
   const out = { configured: !!(E.DATABASE_URL && E.SESSION_SECRET && E.SESSION_SECRET.length >= 32 && E.SETUP_TOKEN), tables: false, hasAdmin: false };
   if (!E.DATABASE_URL) return out;
   try { const r = await Q("SELECT to_regclass('public.admin_users') t"); out.tables = !!r.rows[0].t;
-    if (out.tables) out.hasAdmin = (await Q('SELECT 1 FROM admin_users LIMIT 1')).rowCount > 0; } catch (e) { out.dbError = true; }
+    if (out.tables) out.hasAdmin = (await Q('SELECT 1 FROM admin_users LIMIT 1')).rowCount > 0; } catch (e) {
+  console.error("Setup status database error:", e?.message || e);
+  out.dbError = true;
+}
   return out;
 }, true);
 
