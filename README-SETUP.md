@@ -1,51 +1,47 @@
-# QuickFix Barak Admin Panel: Stage 1
+# QuickFix Barak Admin Panel: Stage 2
 
-Technician onboarding, verification and account control, with a secure admin login and a live dashboard.
+Adds bookings, technician matching and assignment, a technician portal, and the new service list on top of Stage 1.
 
-## What you need (all free to start)
-1. A **Supabase** account (supabase.com) for the PostgreSQL database.
-2. A **Netlify** account.
+## UPGRADING from Stage 1 (you already have it running)
+1. In Netlify open your site, then **Deploys**, and drag in this unzipped folder (or the ZIP) as a new deploy. Keep your 3 environment variables as they are. You do NOT need SETUP_TOKEN again.
+2. Open your admin site and sign in. The first request upgrades the database by itself, safely, without losing data:
+   - adds the new columns and tables,
+   - changes the service list to the 6 services below (old names are renamed or retired, never deleted, so existing technicians keep their skills where the service still exists).
+3. Check **Service categories** in the sidebar. Check each technician's approved services (Edit profile), because retired services such as Refrigerator repair no longer appear.
 
-## Step 1: Create the database
-1. In Supabase, create a project and note the **database password** you set.
-2. Click **Connect** at the top of the project, choose **Transaction pooler**, and copy the connection string. It looks like `postgresql://postgres.PROJECTREF:[YOUR-PASSWORD]@aws-0-REGION.pooler.supabase.com:6543/postgres`.
-3. Replace `[YOUR-PASSWORD]` with your real password. If it contains symbols such as `@ # / :`, URL-encode them (for example `@` becomes `%40`), or reset it to letters and numbers only.
-4. Use the **pooler** string, not the "Direct connection" one. The direct one needs IPv6 and fails from Netlify.
-5. You do not need to touch Supabase's Table Editor or its API keys. This project creates its own tables and never exposes them through Supabase's public API.
+## NEW INSTALL
+Follow the Stage 1 steps: Supabase pooler connection string, Netlify variables (DATABASE_URL, SESSION_SECRET, SETUP_TOKEN), open /setup.html, create tables, create the owner. Then delete SETUP_TOKEN.
 
-## Step 2: Deploy to Netlify
-1. In Netlify choose **Add new site > Deploy manually** and drag in this ZIP (or the unzipped folder).
-2. Open **Site configuration > Environment variables** and add three variables:
-   - `DATABASE_URL`  = your Supabase pooler connection string
-   - `SESSION_SECRET` = any random text, at least 32 characters
-   - `SETUP_TOKEN`    = a private password you choose, at least 12 characters
-3. **Deploy again** (Deploys > Trigger deploy, or drag the ZIP again) so the variables take effect.
+## Services now offered
+1. Electrical Works, Estimating & Costing
+2. Plumbing
+3. Home Cleaning
+4. Water Tank Cleaning
+5. AC Servicing
+6. Metal Fabrication, Estimating & Costing
 
-## Step 3: One-time setup
-1. Open `https://YOUR-SITE.netlify.app/setup.html`.
-2. Enter your setup token and press **Create tables**.
-3. Create the **owner account** (your name, email, password of 10+ characters).
-4. In Netlify, **delete the SETUP_TOKEN variable** and redeploy. Setup is now closed for good.
-5. Sign in at `https://YOUR-SITE.netlify.app/`.
+You can add, rename, set an inspection fee for, reorder, or retire services in **Service categories**.
 
-There is no public admin registration. Only the one-time setup can create the first owner.
+## Taking an order and assigning a technician
+1. **Bookings, New booking**. Enter the customer's mobile first (returning customers fill in automatically), then name, address, area, service, preferred time and the problem.
+2. Open the booking and press **Find technician**. You see only technicians who are **active, verified and approved for that service**, best match first: same area, then fewest open jobs, then rating. You can change the area, tick "Only this area", and see how many jobs each person already has that day.
+3. Press **Assign**. To change technician later, press Reassign (a reason is required). Every step is recorded in the booking's activity log.
+4. You can also reschedule (reason required), change status, or cancel (reason required).
 
-## Using it
-- **Technicians > Add technician**: fill the sections, review, create. The server assigns the permanent ID (QFB-TECH-0001, 0002...). IDs are never reused.
-- Open a profile to verify, reject, activate, deactivate, suspend or reinstate. Reasons are required for sensitive changes and every action goes in the audit log.
-- A technician can only be activated when they are **Verified**, have an **accepted agreement** and at least one **approved service**.
+## Technician portal
+1. Open the technician's profile and press **Enable portal login**. A temporary password is shown ONCE. Send it with the **Send on WhatsApp** button.
+2. The technician opens `https://YOUR-SITE/tech.html` and signs in with their **Technician ID or mobile number** plus the password. They must set their own password at first login.
+3. They see only their own assigned jobs, with customer name, address, call, WhatsApp and map buttons, and move each job along: On my way, I have arrived, Start work, Mark job completed. You see these updates on the booking.
+4. Only **active and verified** technicians can sign in. Suspending or deactivating a technician blocks the portal immediately. Use **Reset password** or **Revoke access** on the profile any time.
+5. Five wrong passwords lock that technician for 15 minutes.
+
+Why a password and not just a mobile number: a mobile number or ID is easy to guess, so on its own it would let anyone read customers' addresses and phone numbers. SMS one-time codes can be added later with a provider such as Firebase or MSG91.
+
+## Not in this stage (Stage 3)
+Cash collection and commission ledger, settlement verification, reports and CSV export, quotations, and customer reviews entry.
 
 ## If the API does not work after a drag-and-drop deploy
-Drag-and-drop deploys can be fussy about functions. The reliable alternative: put this folder in a GitHub repository, connect it in Netlify (Add new site > Import from Git). The build command and settings are already in `netlify.toml`.
-
-## Security notes
-- Passwords are hashed (scrypt). Sessions are signed, HttpOnly, Secure, SameSite=Strict cookies that last 8 hours.
-- Five wrong passwords lock the account for 15 minutes.
-- The browser never sees database credentials. All database access happens in the server function.
-- Payments, payment adjustments and the audit log cannot be edited or deleted (enforced by the database).
-
-## Stage 2 (next)
-Bookings and assignment, cash collection and commission ledger, settlement verification, reports with CSV export, service category and price management, private document storage, and technician app access.
+Put this folder in a GitHub repository and import it in Netlify (settings are in `netlify.toml`).
 
 ## Rebuilding the function (only if you change src/)
 `npm install` then `npm run build`.

@@ -34,3 +34,5 @@ dialog{border:0;border-radius:16px;padding:22px;max-width:440px;width:92%;box-sh
 .login .card{display:grid;gap:14px}.sk{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px 12px}
 @media(max-width:860px){.side{position:fixed;left:-270px;z-index:30;transition:.3s}.side.open{left:0}.burger{display:block}.grid2{grid-template-columns:1fr}.pad{padding:14px}.kv{grid-template-columns:1fr}}
 @media print{.side,.top,.noprint,#toast{display:none!important}.pad{max-width:none;padding:0}.card{break-inside:avoid}body{background:#fff}}
+
+.b-requested,.b-confirmed{background:#fff3d6;color:var(--y)}.b-assigned,.b-en_route,.b-arrived,.b-diagnosing,.b-in_progress,.b-quote_pending,.b-quote_accepted{background:#e6f0ff;color:var(--n)}.b-completed{background:#dff5e8;color:var(--g)}.b-cancelled,.b-disputed,.b-quote_rejected{background:#fde4e2;color:var(--r)}

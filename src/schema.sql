@@ -165,10 +165,33 @@ CREATE TRIGGER adjustments_immutable BEFORE UPDATE OR DELETE ON payment_adjustme
 DROP TRIGGER IF EXISTS audit_immutable ON audit_logs;
 CREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION qfb_immutable();
 
-INSERT INTO service_categories (name, sort_order) VALUES
- ('AC repair and installation',1),('Refrigerator repair',2),('Washing machine repair',3),('Electrical work',4),
- ('Plumbing',5),('Inverter and battery service',6),('Water tank cleaning',7),('General home maintenance',8)
-ON CONFLICT (name) DO NOTHING;
+-- ===== Stage 2 additions (idempotent) =====
+CREATE TABLE IF NOT EXISTS app_meta (key text PRIMARY KEY, value text NOT NULL);
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS login_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT true;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS failed_attempts int NOT NULL DEFAULT 0;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS locked_until timestamptz;
+ALTER TABLE technicians ADD COLUMN IF NOT EXISTS last_login_at timestamptz;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS problem text;
+ALTER TABLE bookings ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'whatsapp';
+CREATE INDEX IF NOT EXISTS booking_assign_tech_idx ON booking_assignments(technician_id) WHERE is_current;
+
+-- Service list v2 (runs once). Renames old names, adds new ones, retires the rest (nothing is deleted).
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM app_meta WHERE key = 'categories_v2') THEN
+  UPDATE service_categories SET name = 'Electrical Works, Estimating & Costing' WHERE name = 'Electrical work' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Electrical Works, Estimating & Costing');
+  UPDATE service_categories SET name = 'AC Servicing' WHERE name = 'AC repair and installation' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'AC Servicing');
+  UPDATE service_categories SET name = 'Water Tank Cleaning' WHERE name = 'Water tank cleaning' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Water Tank Cleaning');
+  INSERT INTO service_categories (name, sort_order) VALUES
+   ('Electrical Works, Estimating & Costing',1),('Plumbing',2),('Home Cleaning',3),('Water Tank Cleaning',4),('AC Servicing',5),('Metal Fabrication, Estimating & Costing',6)
+  ON CONFLICT (name) DO NOTHING;
+  UPDATE service_categories SET
+   sort_order = CASE name WHEN 'Electrical Works, Estimating & Costing' THEN 1 WHEN 'Plumbing' THEN 2 WHEN 'Home Cleaning' THEN 3 WHEN 'Water Tank Cleaning' THEN 4 WHEN 'AC Servicing' THEN 5 WHEN 'Metal Fabrication, Estimating & Costing' THEN 6 ELSE 100 + sort_order END,
+   is_active = name IN ('Electrical Works, Estimating & Costing','Plumbing','Home Cleaning','Water Tank Cleaning','AC Servicing','Metal Fabrication, Estimating & Costing');
+  INSERT INTO app_meta (key, value) VALUES ('categories_v2', 'done');
+ END IF;
+END $$;
 
 -- Lock the tables away from Supabase's public Data API (anon/authenticated keys).
 -- The server connects with the database owner role, which is unaffected.

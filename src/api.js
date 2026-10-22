@@ -19,15 +19,15 @@ const bad = (m) => new HttpError(400, m);
 // ---------- security helpers ----------
 const sign = (s) => crypto.createHmac('sha256', E.SESSION_SECRET).update(s).digest('base64url');
 const same = (a, b) => { a = Buffer.from(String(a)); b = Buffer.from(String(b)); return a.length === b.length && crypto.timingSafeEqual(a, b); };
-const mkToken = (id) => { const p = Buffer.from(JSON.stringify({ sub: id, exp: Date.now() + 8 * 3600e3 })).toString('base64url'); return p + '.' + sign(p); };
-function readToken(t) {
+const mkToken = (id, t = 'a') => { const p = Buffer.from(JSON.stringify({ sub: id, t, exp: Date.now() + 8 * 3600e3 })).toString('base64url'); return p + '.' + sign(p); };
+function readToken(t, type = 'a') {
   if (!t) return null; const [p, s] = t.split('.');
   if (!p || !s || !same(s, sign(p))) return null;
-  try { const o = JSON.parse(Buffer.from(p, 'base64url')); return o.exp > Date.now() ? o.sub : null; } catch { return null; }
+  try { const o = JSON.parse(Buffer.from(p, 'base64url')); return o.exp > Date.now() && (o.t || 'a') === type ? o.sub : null; } catch { return null; }
 }
 const hashPw = (pw) => { const s = crypto.randomBytes(16).toString('hex'); return 'scrypt$' + s + '$' + crypto.scryptSync(pw, s, 64).toString('hex'); };
 const checkPw = (pw, h) => { const [, s, x] = h.split('$'); return same(crypto.scryptSync(pw, s, 64).toString('hex'), x); };
-const cookie = (v, age) => `qfb_session=${v}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
+const cookie = (n, v, age) => `${n}=${v}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${age}`;
 
 // ---------- validation helpers ----------
 const S = (v, max = 200) => (v == null ? '' : String(v)).trim().slice(0, max);
@@ -100,17 +100,14 @@ R('GET', '/setup/status', async () => {
   const out = { configured: !!(E.DATABASE_URL && E.SESSION_SECRET && E.SESSION_SECRET.length >= 32 && E.SETUP_TOKEN), tables: false, hasAdmin: false };
   if (!E.DATABASE_URL) return out;
   try { const r = await Q("SELECT to_regclass('public.admin_users') t"); out.tables = !!r.rows[0].t;
-    if (out.tables) out.hasAdmin = (await Q('SELECT 1 FROM admin_users LIMIT 1')).rowCount > 0; } catch (e) {
-  console.error("Setup status database error:", e?.message || e);
-  out.dbError = true;
-}
+    if (out.tables) out.hasAdmin = (await Q('SELECT 1 FROM admin_users LIMIT 1')).rowCount > 0; } catch (e) { out.dbError = true; }
   return out;
-}, true);
+}, 'pub');
 
 R('POST', '/setup', async (x) => {
   if (!E.SETUP_TOKEN || E.SETUP_TOKEN.length < 12) throw new HttpError(500, 'SETUP_TOKEN is not set on the server (min 12 characters)');
   if (!same(S(x.body.token, 200), E.SETUP_TOKEN)) throw new HttpError(403, 'Setup token is incorrect');
-  if (x.body.action === 'migrate') { await Q(SCHEMA); return { ok: true, message: 'Database tables are ready' }; }
+  if (x.body.action === 'migrate') { await Q(SCHEMA); await Q("INSERT INTO app_meta(key,value) VALUES('schema_version',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [String(SCHEMA_VERSION)]); return { ok: true, message: 'Database tables are ready' }; }
   if (x.body.action === 'create_admin') {
     if ((await Q('SELECT 1 FROM admin_users LIMIT 1')).rowCount) throw new HttpError(403, 'An administrator already exists. Setup is closed.');
     const email = req(x.body.email, 'Email', 120).toLowerCase(), name = req(x.body.name, 'Name', 100), pw = S(x.body.password, 200);
@@ -121,7 +118,7 @@ R('POST', '/setup', async (x) => {
     return { ok: true };
   }
   throw bad('Unknown setup action');
-}, true);
+}, 'pub');
 
 R('POST', '/login', async (x) => {
   const email = S(x.body.email, 120).toLowerCase(), pw = S(x.body.password, 200);
@@ -136,12 +133,12 @@ R('POST', '/login', async (x) => {
   }
   await Q('UPDATE admin_users SET failed_attempts=0, locked_until=NULL, last_login_at=now() WHERE id=$1', [a.id]);
   await audit({ query: (...q) => Q(...q) }, { admin: a, ip: x.ip }, 'login', 'admin', a.id);
-  return { body: { name: a.name, email: a.email, role: a.role }, cookie: cookie(mkToken(a.id), 28800) };
-}, true);
+  return { body: { name: a.name, email: a.email, role: a.role }, cookie: cookie('qfb_session', mkToken(a.id), 28800) };
+}, 'pub');
 
-R('POST', '/logout', async (x) => ({ body: { ok: true }, cookie: cookie('', 0) }), true);
+R('POST', '/logout', async (x) => ({ body: { ok: true }, cookie: cookie('qfb_session', '', 0) }), true);
 R('GET', '/me', async (x) => ({ name: x.admin.name, email: x.admin.email, role: x.admin.role }));
-R('GET', '/categories', async () => (await Q('SELECT id,name,is_active FROM service_categories ORDER BY sort_order,name')).rows);
+R('GET', '/categories', async () => (await Q('SELECT id,name,description,inspection_fee,is_active,sort_order FROM service_categories ORDER BY is_active DESC,sort_order,name')).rows);
 
 R('GET', '/dashboard', async () => {
   const c = (await Q(`SELECT
@@ -153,13 +150,14 @@ R('GET', '/dashboard', async () => {
    (SELECT count(*) FROM bookings) bookings,
    (SELECT count(*) FROM bookings WHERE work_status IN ('requested','confirmed','assigned')) bookings_open,
    (SELECT count(*) FROM bookings WHERE work_status='completed') bookings_done,
+   (SELECT count(*) FROM bookings b WHERE b.work_status NOT IN ('completed','cancelled') AND NOT EXISTS (SELECT 1 FROM booking_assignments a WHERE a.booking_id=b.id AND a.is_current)) bookings_unassigned,
    (SELECT COALESCE(sum(amount_collected),0) FROM payments)-(SELECT COALESCE(sum(amount),0) FROM payment_adjustments WHERE kind='refund') cash,
    (SELECT COALESCE(sum(commission_amount),0) FROM technician_commission_ledger) owed,
    (SELECT COALESCE(sum(amount_settled),0) FROM technician_settlements WHERE status='verified') settled`)).rows[0];
   const n = (k) => Number(c[k]);
   return {
     cards: { tech_total: n('tech_total'), tech_active: n('tech_active'), tech_pending: n('tech_pending'), tech_suspended: n('tech_suspended'),
-      customers: n('customers'), bookings: n('bookings'), bookings_open: n('bookings_open'), bookings_done: n('bookings_done'),
+      customers: n('customers'), bookings: n('bookings'), bookings_open: n('bookings_open'), bookings_done: n('bookings_done'), bookings_unassigned: n('bookings_unassigned'),
       cash: n('cash'), owed: n('owed'), outstanding: n('owed') - n('settled'), settled: n('settled') },
     activity: (await Q(`SELECT a.action,a.entity_id,a.reason,a.created_at,u.name admin FROM audit_logs a LEFT JOIN admin_users u ON u.id=a.admin_id WHERE a.action NOT IN ('login','login.failed') ORDER BY a.id DESC LIMIT 8`)).rows,
     bookings: (await Q(`SELECT b.booking_code,b.work_status,b.created_at,cu.name customer,sc.name service FROM bookings b JOIN customers cu ON cu.id=b.customer_id JOIN service_categories sc ON sc.id=b.category_id ORDER BY b.created_at DESC LIMIT 5`)).rows,
@@ -222,7 +220,7 @@ R('GET', '/technicians/' + TC, async (x) => {
     (SELECT COALESCE(sum(commission_amount),0) FROM technician_commission_ledger WHERE technician_id=$1) owed,
     (SELECT COALESCE(sum(amount_settled),0) FROM technician_settlements WHERE technician_id=$1 AND status='verified') settled`, [id])).rows[0];
   return {
-    tech: t, stats: { ...st, outstanding: Number(st.owed) - Number(st.settled) },
+    tech: Object.assign({}, t, { password_hash: undefined, failed_attempts: undefined, locked_until: undefined, has_login: !!(t.login_enabled && t.password_hash) }), stats: { ...st, outstanding: Number(st.owed) - Number(st.settled) },
     categories: await one('SELECT c.id,c.name,(s.technician_id IS NOT NULL AND s.approved) approved FROM service_categories c LEFT JOIN technician_skills s ON s.category_id=c.id AND s.technician_id=$1 WHERE c.is_active OR s.technician_id IS NOT NULL ORDER BY c.sort_order'),
     verification: (await one('SELECT v.*,u.name verified_by_name FROM technician_verifications v LEFT JOIN admin_users u ON u.id=v.verified_by WHERE technician_id=$1'))[0],
     agreement: (await one('SELECT * FROM technician_agreements WHERE technician_id=$1 ORDER BY accepted_at DESC LIMIT 1'))[0] || null,
@@ -296,11 +294,221 @@ R('POST', '/technicians/' + TC + '/notes', async (x) => {
   return { ok: true };
 });
 
+// ---------- automatic database upgrade (existing installs) ----------
+const SCHEMA_VERSION = 2;
+let upgraded;
+function ensureSchema() {
+  if (upgraded) return upgraded;
+  upgraded = (async () => {
+    const c = await db().connect();
+    try {
+      await c.query('SELECT pg_advisory_lock(727272)');
+      if (!(await c.query("SELECT to_regclass('public.admin_users') t")).rows[0].t) return; // fresh install: use /setup.html
+      const has = (await c.query("SELECT to_regclass('public.app_meta') t")).rows[0].t;
+      const cur = has ? Number(((await c.query("SELECT value FROM app_meta WHERE key='schema_version'")).rows[0] || {}).value || 0) : 0;
+      if (cur < SCHEMA_VERSION) { await c.query(SCHEMA); await c.query("INSERT INTO app_meta(key,value) VALUES('schema_version',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [String(SCHEMA_VERSION)]); }
+    } finally { await c.query('SELECT pg_advisory_unlock(727272)').catch(() => {}); c.release(); }
+  })().catch((e) => { upgraded = null; throw e; });
+  return upgraded;
+}
+// ---------- Stage 2: service categories ----------
+const PQ = { query: (...a) => Q(...a) };
+const fee = (v) => { if (v === '' || v == null) return null; const n = Number(v); if (!(n >= 0 && n <= 100000)) throw bad('Inspection fee must be 0 or more'); return n; };
+R('POST', '/categories', async (x) => {
+  const b = x.body, name = req(b.name, 'Service name', 120);
+  try {
+    const r = await Q('INSERT INTO service_categories(name,description,inspection_fee,sort_order) VALUES($1,$2,$3,$4) RETURNING id', [name, opt(b.description, 300), fee(b.inspection_fee), intOrNull(b.sort_order, 'Sort order', 0, 999) || 0]);
+    await audit(PQ, x, 'category.created', 'category', String(r.rows[0].id), null, { name }); return { id: r.rows[0].id };
+  } catch (e) { if (e.code === '23505') throw new HttpError(409, 'A service with this name already exists'); throw e; }
+});
+R('PATCH', '/categories/(\\d+)', async (x) => {
+  const id = +x.params[0], b = x.body, cur = (await Q('SELECT * FROM service_categories WHERE id=$1', [id])).rows[0];
+  if (!cur) throw new HttpError(404, 'Service not found');
+  const active = !!b.is_active, reason = S(b.reason, 300);
+  if (cur.is_active && !active && reason.length < 3) throw bad('A reason is required to deactivate a service');
+  try {
+    await Q('UPDATE service_categories SET name=$1,description=$2,inspection_fee=$3,sort_order=$4,is_active=$5 WHERE id=$6', [req(b.name, 'Service name', 120), opt(b.description, 300), fee(b.inspection_fee), intOrNull(b.sort_order, 'Sort order', 0, 999) || 0, active, id]);
+  } catch (e) { if (e.code === '23505') throw new HttpError(409, 'A service with this name already exists'); throw e; }
+  await audit(PQ, x, cur.is_active && !active ? 'category.deactivated' : 'category.edited', 'category', String(id), reason || null); return { ok: true };
+});
+
+// ---------- Stage 2: technician portal access (admin side) ----------
+const genPw = () => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 8; i++) s += a[crypto.randomInt(a.length)]; return s; };
+R('POST', '/technicians/' + TC + '/login-access', async (x) => {
+  const t = await loadTech(x.params[0]), act = S(x.body.action, 10);
+  if (act === 'revoke') {
+    await Q('UPDATE technicians SET login_enabled=false, password_hash=NULL WHERE id=$1', [t.id]);
+    await audit(PQ, x, 'technician.login.revoke', 'technician', t.tech_code); return { ok: true };
+  }
+  if (act !== 'create' && act !== 'reset') throw bad('Unknown action');
+  if (t.verification_status !== 'verified') throw bad('Verify the technician before enabling portal login');
+  const pw = genPw();
+  await Q('UPDATE technicians SET password_hash=$1,login_enabled=true,must_change_password=true,failed_attempts=0,locked_until=NULL WHERE id=$2', [hashPw(pw), t.id]);
+  await audit(PQ, x, 'technician.login.' + act, 'technician', t.tech_code);
+  return { password: pw, mobile: t.mobile, tech_code: t.tech_code, name: t.full_name };
+});
+
+// ---------- Stage 2: customers and bookings ----------
+const BC = '(QF-\\d{3,})';
+const SOURCES = ['whatsapp', 'phone', 'website', 'walk_in', 'other'];
+const when = (v) => { v = S(v, 25); if (!v) return null; if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v)) throw bad('Invalid date and time'); return v + ':00+05:30'; };
+async function loadBooking(code) {
+  const b = (await Q(`SELECT b.*,sc.name service,cu.name customer_name,cu.mobile customer_mobile,cu.email customer_email
+    FROM bookings b JOIN service_categories sc ON sc.id=b.category_id JOIN customers cu ON cu.id=b.customer_id WHERE b.booking_code=$1`, [code])).rows[0];
+  if (!b) throw new HttpError(404, 'Booking not found'); return b;
+}
+R('GET', '/customers/lookup', async (x) => {
+  const m = mob(x.query.mobile, 'Mobile number', true);
+  return (await Q('SELECT name,mobile,email,address,locality FROM customers WHERE mobile=$1', [m])).rows[0] || null;
+});
+
+R('GET', '/bookings', async (x) => {
+  const q = x.query, w = [], p = [], add = (sql, v) => { p.push(v); w.push(sql.replace('?', '$' + p.length)); };
+  if (q.q) { p.push('%' + S(q.q, 60).toLowerCase() + '%'); w.push(`(lower(b.booking_code) LIKE $${p.length} OR lower(cu.name) LIKE $${p.length} OR cu.mobile LIKE $${p.length})`); }
+  if (q.status) add('b.work_status=?', S(q.status, 20));
+  if (q.category) add('b.category_id=?', parseInt(q.category, 10) || 0);
+  if (q.area) add('lower(b.locality) LIKE ?', '%' + S(q.area, 60).toLowerCase() + '%');
+  if (q.assignment === 'unassigned') w.push("a.id IS NULL AND b.work_status NOT IN ('completed','cancelled')");
+  if (q.assignment === 'assigned') w.push('a.id IS NOT NULL');
+  const base = `FROM bookings b JOIN customers cu ON cu.id=b.customer_id JOIN service_categories sc ON sc.id=b.category_id
+    LEFT JOIN booking_assignments a ON a.booking_id=b.id AND a.is_current LEFT JOIN technicians t ON t.id=a.technician_id ${w.length ? 'WHERE ' + w.join(' AND ') : ''}`;
+  const page = Math.max(1, parseInt(q.page, 10) || 1), size = 15, total = Number((await Q('SELECT count(*) ' + base, p)).rows[0].count);
+  const rows = (await Q(`SELECT b.booking_code,b.work_status,b.locality,b.preferred_at,b.created_at,cu.name customer,cu.mobile,sc.name service,t.tech_code,t.full_name tech_name ${base} ORDER BY b.created_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, p)).rows;
+  return { rows, total, page, pages: Math.max(1, Math.ceil(total / size)) };
+});
+
+R('POST', '/bookings', async (x) => {
+  const b = x.body, name = req(b.name, 'Customer name', 120), mobile = mob(b.mobile, 'Customer mobile number', true), address = req(b.address, 'Address', 300), locality = req(b.locality, 'Town / locality', 100);
+  const source = SOURCES.includes(b.source) ? b.source : 'whatsapp', cat = parseInt(b.category_id, 10) || 0, preferred = when(b.preferred_at);
+  const email = S(b.email, 120); if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Email address is not valid');
+  const c = (await Q('SELECT id,inspection_fee FROM service_categories WHERE id=$1 AND is_active', [cat])).rows[0];
+  if (!c) throw bad('Choose a service');
+  return await tx(async (cl) => {
+    const cu = (await cl.query(`INSERT INTO customers(name,mobile,email,address,locality) VALUES($1,$2,$3,$4,$5)
+      ON CONFLICT (mobile) DO UPDATE SET name=EXCLUDED.name, address=EXCLUDED.address, locality=EXCLUDED.locality, email=COALESCE(EXCLUDED.email, customers.email) RETURNING id`, [name, mobile, email || null, address, locality])).rows[0];
+    const bk = (await cl.query('INSERT INTO bookings(customer_id,category_id,address,locality,preferred_at,inspection_fee,problem,source) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING booking_code', [cu.id, cat, address, locality, preferred, c.inspection_fee || 0, opt(b.problem, 1000), source])).rows[0];
+    await audit(cl, x, 'booking.created', 'booking', bk.booking_code, null, { source }); return { booking_code: bk.booking_code };
+  });
+});
+
+R('GET', '/bookings/' + BC, async (x) => {
+  const b = await loadBooking(x.params[0]);
+  const hist = (await Q(`SELECT a.is_current,a.assigned_at,a.ended_at,a.reason,t.tech_code,t.full_name,t.mobile,u.name assigned_by FROM booking_assignments a JOIN technicians t ON t.id=a.technician_id LEFT JOIN admin_users u ON u.id=a.assigned_by WHERE a.booking_id=$1 ORDER BY a.assigned_at DESC`, [b.id])).rows;
+  const act = (await Q(`SELECT a.action,a.reason,a.created_at,a.details,u.name admin FROM audit_logs a LEFT JOIN admin_users u ON u.id=a.admin_id WHERE a.entity_type='booking' AND a.entity_id=$1 ORDER BY a.id DESC LIMIT 40`, [b.booking_code])).rows;
+  return { booking: b, current: hist.find((h) => h.is_current) || null, history: hist, activity: act };
+});
+
+R('GET', '/bookings/' + BC + '/candidates', async (x) => {
+  const b = await loadBooking(x.params[0]), area = S(x.query.area, 80) || b.locality || '';
+  const rows = (await Q(`SELECT t.tech_code,t.full_name,t.mobile,t.locality,t.service_localities,t.availability,t.own_transport,
+    (SELECT count(*) FROM booking_assignments a JOIN bookings k ON k.id=a.booking_id WHERE a.technician_id=t.id AND a.is_current AND k.work_status NOT IN ('completed','cancelled')) open_jobs,
+    (SELECT count(*) FROM booking_assignments a JOIN bookings k ON k.id=a.booking_id WHERE a.technician_id=t.id AND a.is_current AND k.work_status NOT IN ('completed','cancelled') AND $3::timestamptz IS NOT NULL AND (k.preferred_at AT TIME ZONE 'Asia/Kolkata')::date = ($3::timestamptz AT TIME ZONE 'Asia/Kolkata')::date) same_day_jobs,
+    (SELECT round(avg(rating),1) FROM reviews WHERE technician_id=t.id) rating,
+    ($2 <> '' AND (lower(t.locality)=lower($2) OR lower(coalesce(t.service_localities,'')) LIKE '%'||lower($2)||'%')) area_match,
+    EXISTS (SELECT 1 FROM booking_assignments a WHERE a.booking_id=$4 AND a.is_current AND a.technician_id=t.id) is_current
+    FROM technicians t WHERE t.status='active' AND t.verification_status='verified'
+    AND EXISTS (SELECT 1 FROM technician_skills s WHERE s.technician_id=t.id AND s.approved AND s.category_id=$1)
+    ORDER BY area_match DESC, open_jobs ASC, rating DESC NULLS LAST, t.full_name`, [b.category_id, area, b.preferred_at, b.id])).rows;
+  return { service: b.service, area, rows };
+});
+
+R('POST', '/bookings/' + BC + '/assign', async (x) => {
+  const b = await loadBooking(x.params[0]);
+  if (['completed', 'cancelled'].includes(b.work_status)) throw bad('This booking is ' + b.work_status + ' and cannot be assigned');
+  const t = await loadTech(S(x.body.technician_code, 30).toUpperCase());
+  if (t.status !== 'active' || t.verification_status !== 'verified') throw bad('Only active, verified technicians can be assigned');
+  if (!(await Q('SELECT 1 FROM technician_skills WHERE technician_id=$1 AND category_id=$2 AND approved', [t.id, b.category_id])).rowCount) throw bad('This technician is not approved for ' + b.service);
+  const cur = (await Q('SELECT id,technician_id FROM booking_assignments WHERE booking_id=$1 AND is_current', [b.id])).rows[0], reason = S(x.body.reason, 500);
+  if (cur && cur.technician_id === t.id) throw bad('This technician is already assigned');
+  if (cur && reason.length < 3) throw bad('A reason is required to reassign');
+  await tx(async (c) => {
+    if (cur) await c.query('UPDATE booking_assignments SET is_current=false, ended_at=now() WHERE id=$1', [cur.id]);
+    await c.query('INSERT INTO booking_assignments(booking_id,technician_id,assigned_by,reason) VALUES($1,$2,$3,$4)', [b.id, t.id, x.admin.id, reason || null]);
+    await c.query("UPDATE bookings SET work_status='assigned', updated_at=now() WHERE id=$1", [b.id]);
+    await audit(c, x, cur ? 'booking.reassigned' : 'booking.assigned', 'booking', b.booking_code, reason || null, { technician: t.tech_code });
+  });
+  return { ok: true };
+});
+
+R('POST', '/bookings/' + BC + '/status', async (x) => {
+  const b = await loadBooking(x.params[0]), st = S(x.body.status, 20), reason = S(x.body.reason, 500);
+  const OK = ['requested', 'confirmed', 'en_route', 'arrived', 'diagnosing', 'quote_pending', 'quote_accepted', 'quote_rejected', 'in_progress', 'completed', 'cancelled', 'disputed'];
+  if (!OK.includes(st)) throw bad('Invalid status');
+  if (b.work_status === 'cancelled') throw bad('Cancelled bookings cannot be changed');
+  if (b.work_status === 'completed' && st !== 'disputed') throw bad('Completed bookings can only be marked disputed');
+  if (st === b.work_status) throw bad('The booking already has this status');
+  if (['cancelled', 'disputed', 'quote_rejected'].includes(st) && reason.length < 3) throw bad('A reason is required');
+  const hasA = (await Q('SELECT 1 FROM booking_assignments WHERE booking_id=$1 AND is_current', [b.id])).rowCount;
+  if (!['requested', 'confirmed', 'cancelled', 'disputed'].includes(st) && !hasA) throw bad('Assign a technician first');
+  if (hasA && ['requested', 'confirmed'].includes(st)) throw bad('A technician is already assigned. Reassign or cancel instead.');
+  await tx(async (c) => {
+    await c.query("UPDATE bookings SET work_status=$1, cancel_reason=CASE WHEN $1='cancelled' THEN $3 ELSE cancel_reason END, completed_at=CASE WHEN $1='completed' THEN now() ELSE completed_at END, updated_at=now() WHERE id=$2", [st, b.id, reason || null]);
+    await audit(c, x, 'booking.status.' + st, 'booking', b.booking_code, reason || null, { from: b.work_status });
+  });
+  return { ok: true };
+});
+
+R('POST', '/bookings/' + BC + '/reschedule', async (x) => {
+  const b = await loadBooking(x.params[0]), at = when(x.body.preferred_at), reason = S(x.body.reason, 500);
+  if (!at) throw bad('Choose a new date and time');
+  if (['completed', 'cancelled'].includes(b.work_status)) throw bad('This booking is ' + b.work_status);
+  if (reason.length < 3) throw bad('A reason is required to reschedule');
+  await tx(async (c) => { await c.query('UPDATE bookings SET preferred_at=$1, updated_at=now() WHERE id=$2', [at, b.id]); await audit(c, x, 'booking.rescheduled', 'booking', b.booking_code, reason, { to: at }); });
+  return { ok: true };
+});
+
+// ---------- Stage 2: technician portal ----------
+R('POST', '/tech/login', async (x) => {
+  const raw = S(x.body.id, 40).toUpperCase().replace(/\s/g, ''), pw = S(x.body.password, 200), fail = new HttpError(401, 'Incorrect ID / mobile number or password');
+  let col, val;
+  if (/^QFB-TECH-\d+$/.test(raw)) { col = 'tech_code'; val = raw; } else { const m = raw.replace(/^(\+91|91)(?=\d{10}$)/, ''); if (!/^[6-9]\d{9}$/.test(m)) throw fail; col = 'mobile'; val = m; }
+  const t = (await Q(`SELECT * FROM technicians WHERE ${col}=$1`, [val])).rows[0];
+  if (!t || !t.login_enabled || !t.password_hash) { crypto.scryptSync(pw, 'x', 64); throw fail; }
+  if (t.locked_until && t.locked_until > new Date()) throw new HttpError(429, 'Too many attempts. Try again in 15 minutes.');
+  if (!checkPw(pw, t.password_hash)) { await Q("UPDATE technicians SET failed_attempts=failed_attempts+1, locked_until=CASE WHEN failed_attempts+1>=5 THEN now()+interval '15 minutes' END WHERE id=$1", [t.id]); throw fail; }
+  if (t.status !== 'active' || t.verification_status !== 'verified') throw new HttpError(403, 'Your account is not active. Please contact QuickFix Barak.');
+  await Q('UPDATE technicians SET failed_attempts=0, locked_until=NULL, last_login_at=now() WHERE id=$1', [t.id]);
+  await audit(PQ, { admin: null, ip: x.ip }, 'technician.login', 'technician', t.tech_code, null, { actor: 'technician' });
+  return { body: { name: t.full_name, tech_code: t.tech_code, must_change: t.must_change_password }, cookie: cookie('qfb_tech', mkToken(t.id, 't'), 28800) };
+}, 'pub');
+R('POST', '/tech/logout', async () => ({ body: { ok: true }, cookie: cookie('qfb_tech', '', 0) }), 'pub');
+R('GET', '/tech/me', async (x) => ({ name: x.tech.full_name, tech_code: x.tech.tech_code, must_change: x.tech.must_change_password }), 'tech');
+R('POST', '/tech/password', async (x) => {
+  const t = (await Q('SELECT password_hash FROM technicians WHERE id=$1', [x.tech.id])).rows[0], cur = S(x.body.current, 200), np = S(x.body.password, 200);
+  if (!checkPw(cur, t.password_hash)) throw bad('Current password is incorrect');
+  if (np.length < 8) throw bad('New password must be at least 8 characters');
+  if (np === cur) throw bad('Choose a different password');
+  await Q('UPDATE technicians SET password_hash=$1, must_change_password=false WHERE id=$2', [hashPw(np), x.tech.id]);
+  await audit(PQ, { admin: null, ip: x.ip }, 'technician.password.changed', 'technician', x.tech.tech_code, null, { actor: 'technician' });
+  return { ok: true };
+}, 'tech');
+R('GET', '/tech/jobs', async (x) => {
+  const done = x.query.scope === 'done';
+  return (await Q(`SELECT b.booking_code,b.work_status,b.address,b.locality,b.preferred_at,b.problem,b.inspection_fee,sc.name service,cu.name customer_name,
+    CASE WHEN b.work_status IN ('completed','cancelled') THEN NULL ELSE cu.mobile END customer_mobile
+    FROM booking_assignments a JOIN bookings b ON b.id=a.booking_id JOIN customers cu ON cu.id=b.customer_id JOIN service_categories sc ON sc.id=b.category_id
+    WHERE a.technician_id=$1 AND a.is_current AND b.work_status ${done ? '' : 'NOT '}IN ('completed','cancelled')
+    ORDER BY ${done ? 'b.updated_at DESC' : 'b.preferred_at NULLS LAST, b.created_at'} LIMIT 50`, [x.tech.id])).rows;
+}, 'tech');
+const TNEXT = { assigned: ['en_route'], en_route: ['arrived'], arrived: ['diagnosing', 'in_progress'], diagnosing: ['in_progress'], quote_accepted: ['in_progress'], in_progress: ['completed'] };
+R('POST', '/tech/jobs/(QF-\\d+)/status', async (x) => {
+  const code = x.params[0], st = S(x.body.status, 20), note = opt(x.body.note, 500);
+  const b = (await Q('SELECT b.id,b.work_status FROM bookings b JOIN booking_assignments a ON a.booking_id=b.id AND a.is_current WHERE b.booking_code=$1 AND a.technician_id=$2', [code, x.tech.id])).rows[0];
+  if (!b) throw new HttpError(404, 'Job not found');
+  if (!(TNEXT[b.work_status] || []).includes(st)) throw bad('That step is not available right now');
+  await tx(async (c) => {
+    await c.query("UPDATE bookings SET work_status=$1, completed_at=CASE WHEN $1='completed' THEN now() ELSE completed_at END, updated_at=now() WHERE id=$2", [st, b.id]);
+    await audit(c, { admin: null, ip: x.ip }, 'booking.status.' + st, 'booking', code, note, { actor: 'technician', tech_code: x.tech.tech_code, from: b.work_status });
+  });
+  return { ok: true, status: st };
+}, 'tech');
+
 // ---------- entry ----------
 const J = (code, body, extra) => ({ statusCode: code, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...(extra || {}) }, body: JSON.stringify(body) });
 exports.handler = async (event) => {
   try {
     if (!E.DATABASE_URL || !E.SESSION_SECRET || E.SESSION_SECRET.length < 32) throw new HttpError(500, 'Server is not configured. Set DATABASE_URL and SESSION_SECRET (32+ characters) in Netlify.');
+    await ensureSchema();
     const path = event.path.replace(/^\/(\.netlify\/functions\/api|api)/, '') || '/', m = event.httpMethod;
     const h = {}; for (const k in event.headers) h[k.toLowerCase()] = event.headers[k];
     if (m !== 'GET' && (h['x-qfb'] !== '1' || !/json/.test(h['content-type'] || ''))) throw new HttpError(403, 'Request blocked');
@@ -309,10 +517,17 @@ exports.handler = async (event) => {
     for (const [rm, re, fn, pub] of routes) {
       const mt = path.match(re); if (rm !== m || !mt) continue;
       x.params = mt.slice(1);
-      if (!pub) {
-        const sid = readToken((h.cookie || '').split(';').map((s) => s.trim()).find((s) => s.startsWith('qfb_session='))?.slice(12));
-        const a = sid && (await Q('SELECT id,name,email,role FROM admin_users WHERE id=$1 AND is_active', [sid])).rows[0];
-        if (!a) throw new HttpError(401, 'Please sign in'); x.admin = a;
+      if (pub !== 'pub') {
+        const tech = pub === 'tech', ck = tech ? 'qfb_tech' : 'qfb_session';
+        const raw = (h.cookie || '').split(';').map((z) => z.trim()).find((z) => z.startsWith(ck + '='));
+        const sid = readToken(raw ? raw.slice(ck.length + 1) : null, tech ? 't' : 'a');
+        if (tech) {
+          const a = sid && (await Q("SELECT id,tech_code,full_name,mobile,must_change_password FROM technicians WHERE id=$1 AND status='active' AND verification_status='verified' AND login_enabled", [sid])).rows[0];
+          if (!a) throw new HttpError(401, 'Please sign in'); x.tech = a;
+        } else {
+          const a = sid && (await Q('SELECT id,name,email,role FROM admin_users WHERE id=$1 AND is_active', [sid])).rows[0];
+          if (!a) throw new HttpError(401, 'Please sign in'); x.admin = a;
+        }
       }
       const out = await fn(x);
       return out && out.cookie ? J(200, out.body, { 'Set-Cookie': out.cookie }) : J(200, out);
