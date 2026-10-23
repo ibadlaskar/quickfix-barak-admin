@@ -195,8 +195,8 @@ var require_postgres_date = __commonJS({
     function bcYearToNegativeYear(year) {
       return -(year - 1);
     }
-    function is0To99(num) {
-      return num >= 0 && num < 100;
+    function is0To99(num2) {
+      return num2 >= 0 && num2 < 100;
     }
   }
 });
@@ -2366,18 +2366,18 @@ var require_buffer_writer = __commonJS({
           oldBuffer.copy(this.buffer, 0, 0, this.offset);
         }
       }
-      addInt32(num) {
+      addInt32(num2) {
         this.ensure(4);
-        this.buffer[this.offset++] = num >>> 24 & 255;
-        this.buffer[this.offset++] = num >>> 16 & 255;
-        this.buffer[this.offset++] = num >>> 8 & 255;
-        this.buffer[this.offset++] = num >>> 0 & 255;
+        this.buffer[this.offset++] = num2 >>> 24 & 255;
+        this.buffer[this.offset++] = num2 >>> 16 & 255;
+        this.buffer[this.offset++] = num2 >>> 8 & 255;
+        this.buffer[this.offset++] = num2 >>> 0 & 255;
         return this;
       }
-      addInt16(num) {
+      addInt16(num2) {
         this.ensure(2);
-        this.buffer[this.offset++] = num >>> 8 & 255;
-        this.buffer[this.offset++] = num >>> 0 & 255;
+        this.buffer[this.offset++] = num2 >>> 8 & 255;
+        this.buffer[this.offset++] = num2 >>> 0 & 255;
         return this;
       }
       addCString(string) {
@@ -5312,7 +5312,7 @@ var require_lib2 = __commonJS({
 // src/schema.sql
 var require_schema = __commonJS({
   "src/schema.sql"(exports2, module2) {
-    module2.exports = "-- QuickFix Barak schema v1 (idempotent: safe to run more than once)\nCREATE SEQUENCE IF NOT EXISTS technician_code_seq START 1;\nCREATE SEQUENCE IF NOT EXISTS booking_code_seq START 1;\n\nCREATE TABLE IF NOT EXISTS admin_users (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  email text UNIQUE NOT NULL, name text NOT NULL,\n  role text NOT NULL DEFAULT 'admin' CHECK (role IN ('owner','admin')),\n  password_hash text NOT NULL, is_active boolean NOT NULL DEFAULT true,\n  failed_attempts int NOT NULL DEFAULT 0, locked_until timestamptz, last_login_at timestamptz,\n  created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS audit_logs (\n  id bigserial PRIMARY KEY, admin_id uuid REFERENCES admin_users(id),\n  action text NOT NULL, entity_type text, entity_id text, reason text, details jsonb, ip text,\n  created_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS audit_entity_idx ON audit_logs(entity_type, entity_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS service_categories (\n  id serial PRIMARY KEY, name text UNIQUE NOT NULL, description text,\n  inspection_fee numeric(10,2) CHECK (inspection_fee >= 0),\n  is_active boolean NOT NULL DEFAULT true, sort_order int NOT NULL DEFAULT 0);\n\nCREATE TABLE IF NOT EXISTS technicians (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  tech_code text UNIQUE NOT NULL,\n  full_name text NOT NULL, mobile text UNIQUE NOT NULL, alt_mobile text, email text, photo_url text,\n  address text NOT NULL, locality text NOT NULL, pin_code text NOT NULL CHECK (pin_code ~ '^[0-9]{6}$'),\n  emergency_name text, emergency_mobile text,\n  experience_years int CHECK (experience_years BETWEEN 0 AND 60), experience_notes text,\n  qualifications text, tools text, own_transport boolean NOT NULL DEFAULT false,\n  working_hours text, availability text CHECK (availability IN ('full_time','part_time','weekend')),\n  service_localities text, max_distance_km int CHECK (max_distance_km >= 0), assessment_notes text,\n  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','inactive','suspended')),\n  verification_status text NOT NULL DEFAULT 'pending' CHECK (verification_status IN ('pending','under_review','verified','rejected')),\n  created_by uuid REFERENCES admin_users(id),\n  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS tech_status_idx ON technicians(status, verification_status);\nCREATE INDEX IF NOT EXISTS tech_name_idx ON technicians(lower(full_name));\n\nCREATE TABLE IF NOT EXISTS technician_skills (\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  category_id int NOT NULL REFERENCES service_categories(id),\n  approved boolean NOT NULL DEFAULT true, approved_by uuid REFERENCES admin_users(id),\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (technician_id, category_id));\n\nCREATE TABLE IF NOT EXISTS technician_documents (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  doc_type text NOT NULL, storage_key text NOT NULL, uploaded_by uuid REFERENCES admin_users(id),\n  created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_verifications (\n  technician_id uuid PRIMARY KEY REFERENCES technicians(id) ON DELETE RESTRICT,\n  mobile_verified boolean NOT NULL DEFAULT false, identity_checked boolean NOT NULL DEFAULT false,\n  address_checked boolean NOT NULL DEFAULT false, skills_assessed boolean NOT NULL DEFAULT false,\n  qualifications_reviewed boolean NOT NULL DEFAULT false,\n  verified_at timestamptz, verified_by uuid REFERENCES admin_users(id),\n  notes text, rejection_reason text, updated_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_agreements (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  version text NOT NULL, accepted_at timestamptz NOT NULL DEFAULT now(),\n  commission_basis text NOT NULL CHECK (commission_basis IN ('labour_only','labour_and_parts','fixed_per_job','custom')),\n  commission_rate numeric(5,2) NOT NULL CHECK (commission_rate BETWEEN 0 AND 100),\n  settlement_schedule text NOT NULL CHECK (settlement_schedule IN ('daily','weekly','fortnightly')),\n  recorded_by uuid REFERENCES admin_users(id));\n\nCREATE TABLE IF NOT EXISTS technician_notes (\n  id bigserial PRIMARY KEY, technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  admin_id uuid REFERENCES admin_users(id), note text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS customers (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, mobile text UNIQUE NOT NULL,\n  email text, address text, locality text, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS users (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  role text NOT NULL CHECK (role IN ('customer','technician')), mobile text, firebase_uid text UNIQUE,\n  customer_id uuid REFERENCES customers(id), technician_id uuid REFERENCES technicians(id),\n  is_active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS bookings (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  booking_code text UNIQUE NOT NULL DEFAULT ('QF-' || lpad(nextval('booking_code_seq')::text, 5, '0')),\n  customer_id uuid NOT NULL REFERENCES customers(id), category_id int NOT NULL REFERENCES service_categories(id),\n  address text NOT NULL, locality text, preferred_at timestamptz,\n  inspection_fee numeric(10,2) NOT NULL DEFAULT 0, diagnosis text,\n  work_status text NOT NULL DEFAULT 'requested' CHECK (work_status IN ('requested','confirmed','assigned','en_route','arrived','diagnosing','quote_pending','quote_accepted','quote_rejected','in_progress','completed','cancelled','disputed')),\n  payment_status text NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','partial','paid','refunded')),\n  settlement_status text NOT NULL DEFAULT 'not_due' CHECK (settlement_status IN ('not_due','due','settled')),\n  complaint_status text NOT NULL DEFAULT 'none', cancel_reason text, completed_at timestamptz,\n  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS booking_status_idx ON bookings(work_status, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS booking_assignments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  booking_id uuid NOT NULL REFERENCES bookings(id), technician_id uuid NOT NULL REFERENCES technicians(id),\n  assigned_by uuid REFERENCES admin_users(id), reason text, is_current boolean NOT NULL DEFAULT true,\n  assigned_at timestamptz NOT NULL DEFAULT now(), ended_at timestamptz);\nCREATE UNIQUE INDEX IF NOT EXISTS one_current_assignment ON booking_assignments(booking_id) WHERE is_current;\n\nCREATE TABLE IF NOT EXISTS quotes (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  version int NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','superseded')),\n  approved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (booking_id, version));\nCREATE TABLE IF NOT EXISTS quote_items (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quote_id uuid NOT NULL REFERENCES quotes(id),\n  kind text NOT NULL CHECK (kind IN ('labour','parts','travel','other')), description text NOT NULL,\n  qty numeric(8,2) NOT NULL DEFAULT 1 CHECK (qty > 0), unit_price numeric(10,2) NOT NULL CHECK (unit_price >= 0));\n\nCREATE TABLE IF NOT EXISTS payments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  technician_id uuid NOT NULL REFERENCES technicians(id), receipt_no text UNIQUE NOT NULL,\n  labour_amount numeric(10,2) NOT NULL DEFAULT 0, parts_amount numeric(10,2) NOT NULL DEFAULT 0,\n  discount numeric(10,2) NOT NULL DEFAULT 0, amount_collected numeric(10,2) NOT NULL CHECK (amount_collected >= 0),\n  method text NOT NULL CHECK (method IN ('cash','upi','bank','other')), paid_at timestamptz NOT NULL DEFAULT now(),\n  created_by uuid REFERENCES admin_users(id));\nCREATE TABLE IF NOT EXISTS payment_adjustments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), payment_id uuid NOT NULL REFERENCES payments(id),\n  kind text NOT NULL CHECK (kind IN ('refund','adjustment')), amount numeric(10,2) NOT NULL,\n  reason text NOT NULL, created_by uuid REFERENCES admin_users(id), created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_commission_ledger (\n  id bigserial PRIMARY KEY, technician_id uuid NOT NULL REFERENCES technicians(id),\n  payment_id uuid REFERENCES payments(id), booking_id uuid REFERENCES bookings(id),\n  entry_type text NOT NULL CHECK (entry_type IN ('commission','adjustment','refund_reversal')),\n  basis_amount numeric(10,2), rate numeric(5,2), commission_amount numeric(10,2) NOT NULL,\n  technician_share numeric(10,2), parts_reimbursable numeric(10,2) NOT NULL DEFAULT 0, note text,\n  created_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS ledger_tech_idx ON technician_commission_ledger(technician_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS technician_settlements (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), technician_id uuid NOT NULL REFERENCES technicians(id),\n  period_from date, period_to date, due_date date NOT NULL,\n  total_collected numeric(10,2) NOT NULL DEFAULT 0, commission_due numeric(10,2) NOT NULL DEFAULT 0,\n  adjustments numeric(10,2) NOT NULL DEFAULT 0, amount_settled numeric(10,2) NOT NULL DEFAULT 0,\n  method text, reference text,\n  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','submitted','verified','rejected')),\n  verified_by uuid REFERENCES admin_users(id), verified_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());\nCREATE TABLE IF NOT EXISTS settlement_items (\n  settlement_id uuid NOT NULL REFERENCES technician_settlements(id),\n  ledger_id bigint NOT NULL REFERENCES technician_commission_ledger(id), amount numeric(10,2) NOT NULL,\n  PRIMARY KEY (settlement_id, ledger_id));\n\nCREATE TABLE IF NOT EXISTS reviews (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  technician_id uuid NOT NULL REFERENCES technicians(id), rating int NOT NULL CHECK (rating BETWEEN 1 AND 5),\n  comment text, created_at timestamptz NOT NULL DEFAULT now());\nCREATE TABLE IF NOT EXISTS complaints (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid REFERENCES bookings(id),\n  technician_id uuid REFERENCES technicians(id), description text NOT NULL,\n  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','investigating','resolved','dismissed')),\n  resolution text, resolved_by uuid REFERENCES admin_users(id), created_at timestamptz NOT NULL DEFAULT now());\n\n-- Completed money records and the audit log cannot be silently changed or deleted.\nCREATE OR REPLACE FUNCTION qfb_immutable() RETURNS trigger AS $$\nBEGIN RAISE EXCEPTION '% records cannot be changed or deleted. Add an adjustment instead.', TG_TABLE_NAME; END; $$ LANGUAGE plpgsql;\nDROP TRIGGER IF EXISTS payments_immutable ON payments;\nCREATE TRIGGER payments_immutable BEFORE UPDATE OR DELETE ON payments FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\nDROP TRIGGER IF EXISTS adjustments_immutable ON payment_adjustments;\nCREATE TRIGGER adjustments_immutable BEFORE UPDATE OR DELETE ON payment_adjustments FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\nDROP TRIGGER IF EXISTS audit_immutable ON audit_logs;\nCREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\n\n-- ===== Stage 2 additions (idempotent) =====\nCREATE TABLE IF NOT EXISTS app_meta (key text PRIMARY KEY, value text NOT NULL);\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS password_hash text;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS login_enabled boolean NOT NULL DEFAULT false;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT true;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS failed_attempts int NOT NULL DEFAULT 0;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS locked_until timestamptz;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS last_login_at timestamptz;\nALTER TABLE bookings ADD COLUMN IF NOT EXISTS problem text;\nALTER TABLE bookings ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'whatsapp';\nCREATE INDEX IF NOT EXISTS booking_assign_tech_idx ON booking_assignments(technician_id) WHERE is_current;\n\n-- Service list v2 (runs once). Renames old names, adds new ones, retires the rest (nothing is deleted).\nDO $$ BEGIN\n IF NOT EXISTS (SELECT 1 FROM app_meta WHERE key = 'categories_v2') THEN\n  UPDATE service_categories SET name = 'Electrical Works, Estimating & Costing' WHERE name = 'Electrical work' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Electrical Works, Estimating & Costing');\n  UPDATE service_categories SET name = 'AC Servicing' WHERE name = 'AC repair and installation' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'AC Servicing');\n  UPDATE service_categories SET name = 'Water Tank Cleaning' WHERE name = 'Water tank cleaning' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Water Tank Cleaning');\n  INSERT INTO service_categories (name, sort_order) VALUES\n   ('Electrical Works, Estimating & Costing',1),('Plumbing',2),('Home Cleaning',3),('Water Tank Cleaning',4),('AC Servicing',5),('Metal Fabrication, Estimating & Costing',6)\n  ON CONFLICT (name) DO NOTHING;\n  UPDATE service_categories SET\n   sort_order = CASE name WHEN 'Electrical Works, Estimating & Costing' THEN 1 WHEN 'Plumbing' THEN 2 WHEN 'Home Cleaning' THEN 3 WHEN 'Water Tank Cleaning' THEN 4 WHEN 'AC Servicing' THEN 5 WHEN 'Metal Fabrication, Estimating & Costing' THEN 6 ELSE 100 + sort_order END,\n   is_active = name IN ('Electrical Works, Estimating & Costing','Plumbing','Home Cleaning','Water Tank Cleaning','AC Servicing','Metal Fabrication, Estimating & Costing');\n  INSERT INTO app_meta (key, value) VALUES ('categories_v2', 'done');\n END IF;\nEND $$;\n\n-- Lock the tables away from Supabase's public Data API (anon/authenticated keys).\n-- The server connects with the database owner role, which is unaffected.\nDO $$ DECLARE r record; BEGIN\n  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP\n    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.tablename);\n  END LOOP;\n  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN\n    REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;\n    REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;\n    REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;\n  END IF;\nEND $$;\n";
+    module2.exports = "-- QuickFix Barak schema v1 (idempotent: safe to run more than once)\nCREATE SEQUENCE IF NOT EXISTS technician_code_seq START 1;\nCREATE SEQUENCE IF NOT EXISTS booking_code_seq START 1;\n\nCREATE TABLE IF NOT EXISTS admin_users (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  email text UNIQUE NOT NULL, name text NOT NULL,\n  role text NOT NULL DEFAULT 'admin' CHECK (role IN ('owner','admin')),\n  password_hash text NOT NULL, is_active boolean NOT NULL DEFAULT true,\n  failed_attempts int NOT NULL DEFAULT 0, locked_until timestamptz, last_login_at timestamptz,\n  created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS audit_logs (\n  id bigserial PRIMARY KEY, admin_id uuid REFERENCES admin_users(id),\n  action text NOT NULL, entity_type text, entity_id text, reason text, details jsonb, ip text,\n  created_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS audit_entity_idx ON audit_logs(entity_type, entity_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS service_categories (\n  id serial PRIMARY KEY, name text UNIQUE NOT NULL, description text,\n  inspection_fee numeric(10,2) CHECK (inspection_fee >= 0),\n  is_active boolean NOT NULL DEFAULT true, sort_order int NOT NULL DEFAULT 0);\n\nCREATE TABLE IF NOT EXISTS technicians (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  tech_code text UNIQUE NOT NULL,\n  full_name text NOT NULL, mobile text UNIQUE NOT NULL, alt_mobile text, email text, photo_url text,\n  address text NOT NULL, locality text NOT NULL, pin_code text NOT NULL CHECK (pin_code ~ '^[0-9]{6}$'),\n  emergency_name text, emergency_mobile text,\n  experience_years int CHECK (experience_years BETWEEN 0 AND 60), experience_notes text,\n  qualifications text, tools text, own_transport boolean NOT NULL DEFAULT false,\n  working_hours text, availability text CHECK (availability IN ('full_time','part_time','weekend')),\n  service_localities text, max_distance_km int CHECK (max_distance_km >= 0), assessment_notes text,\n  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','inactive','suspended')),\n  verification_status text NOT NULL DEFAULT 'pending' CHECK (verification_status IN ('pending','under_review','verified','rejected')),\n  created_by uuid REFERENCES admin_users(id),\n  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS tech_status_idx ON technicians(status, verification_status);\nCREATE INDEX IF NOT EXISTS tech_name_idx ON technicians(lower(full_name));\n\nCREATE TABLE IF NOT EXISTS technician_skills (\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  category_id int NOT NULL REFERENCES service_categories(id),\n  approved boolean NOT NULL DEFAULT true, approved_by uuid REFERENCES admin_users(id),\n  approved_at timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY (technician_id, category_id));\n\nCREATE TABLE IF NOT EXISTS technician_documents (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  doc_type text NOT NULL, storage_key text NOT NULL, uploaded_by uuid REFERENCES admin_users(id),\n  created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_verifications (\n  technician_id uuid PRIMARY KEY REFERENCES technicians(id) ON DELETE RESTRICT,\n  mobile_verified boolean NOT NULL DEFAULT false, identity_checked boolean NOT NULL DEFAULT false,\n  address_checked boolean NOT NULL DEFAULT false, skills_assessed boolean NOT NULL DEFAULT false,\n  qualifications_reviewed boolean NOT NULL DEFAULT false,\n  verified_at timestamptz, verified_by uuid REFERENCES admin_users(id),\n  notes text, rejection_reason text, updated_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_agreements (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  version text NOT NULL, accepted_at timestamptz NOT NULL DEFAULT now(),\n  commission_basis text NOT NULL CHECK (commission_basis IN ('labour_only','labour_and_parts','fixed_per_job','custom')),\n  commission_rate numeric(5,2) NOT NULL CHECK (commission_rate BETWEEN 0 AND 100),\n  settlement_schedule text NOT NULL CHECK (settlement_schedule IN ('daily','weekly','fortnightly')),\n  recorded_by uuid REFERENCES admin_users(id));\n\nCREATE TABLE IF NOT EXISTS technician_notes (\n  id bigserial PRIMARY KEY, technician_id uuid NOT NULL REFERENCES technicians(id) ON DELETE RESTRICT,\n  admin_id uuid REFERENCES admin_users(id), note text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS customers (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, mobile text UNIQUE NOT NULL,\n  email text, address text, locality text, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS users (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  role text NOT NULL CHECK (role IN ('customer','technician')), mobile text, firebase_uid text UNIQUE,\n  customer_id uuid REFERENCES customers(id), technician_id uuid REFERENCES technicians(id),\n  is_active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS bookings (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  booking_code text UNIQUE NOT NULL DEFAULT ('QF-' || lpad(nextval('booking_code_seq')::text, 5, '0')),\n  customer_id uuid NOT NULL REFERENCES customers(id), category_id int NOT NULL REFERENCES service_categories(id),\n  address text NOT NULL, locality text, preferred_at timestamptz,\n  inspection_fee numeric(10,2) NOT NULL DEFAULT 0, diagnosis text,\n  work_status text NOT NULL DEFAULT 'requested' CHECK (work_status IN ('requested','confirmed','assigned','en_route','arrived','diagnosing','quote_pending','quote_accepted','quote_rejected','in_progress','completed','cancelled','disputed')),\n  payment_status text NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','partial','paid','refunded')),\n  settlement_status text NOT NULL DEFAULT 'not_due' CHECK (settlement_status IN ('not_due','due','settled')),\n  complaint_status text NOT NULL DEFAULT 'none', cancel_reason text, completed_at timestamptz,\n  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS booking_status_idx ON bookings(work_status, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS booking_assignments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),\n  booking_id uuid NOT NULL REFERENCES bookings(id), technician_id uuid NOT NULL REFERENCES technicians(id),\n  assigned_by uuid REFERENCES admin_users(id), reason text, is_current boolean NOT NULL DEFAULT true,\n  assigned_at timestamptz NOT NULL DEFAULT now(), ended_at timestamptz);\nCREATE UNIQUE INDEX IF NOT EXISTS one_current_assignment ON booking_assignments(booking_id) WHERE is_current;\n\nCREATE TABLE IF NOT EXISTS quotes (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  version int NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','superseded')),\n  approved_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (booking_id, version));\nCREATE TABLE IF NOT EXISTS quote_items (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), quote_id uuid NOT NULL REFERENCES quotes(id),\n  kind text NOT NULL CHECK (kind IN ('labour','parts','travel','other')), description text NOT NULL,\n  qty numeric(8,2) NOT NULL DEFAULT 1 CHECK (qty > 0), unit_price numeric(10,2) NOT NULL CHECK (unit_price >= 0));\n\nCREATE TABLE IF NOT EXISTS payments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  technician_id uuid NOT NULL REFERENCES technicians(id), receipt_no text UNIQUE NOT NULL,\n  labour_amount numeric(10,2) NOT NULL DEFAULT 0, parts_amount numeric(10,2) NOT NULL DEFAULT 0,\n  discount numeric(10,2) NOT NULL DEFAULT 0, amount_collected numeric(10,2) NOT NULL CHECK (amount_collected >= 0),\n  method text NOT NULL CHECK (method IN ('cash','upi','bank','other')), paid_at timestamptz NOT NULL DEFAULT now(),\n  created_by uuid REFERENCES admin_users(id));\nCREATE TABLE IF NOT EXISTS payment_adjustments (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), payment_id uuid NOT NULL REFERENCES payments(id),\n  kind text NOT NULL CHECK (kind IN ('refund','adjustment')), amount numeric(10,2) NOT NULL,\n  reason text NOT NULL, created_by uuid REFERENCES admin_users(id), created_at timestamptz NOT NULL DEFAULT now());\n\nCREATE TABLE IF NOT EXISTS technician_commission_ledger (\n  id bigserial PRIMARY KEY, technician_id uuid NOT NULL REFERENCES technicians(id),\n  payment_id uuid REFERENCES payments(id), booking_id uuid REFERENCES bookings(id),\n  entry_type text NOT NULL CHECK (entry_type IN ('commission','adjustment','refund_reversal')),\n  basis_amount numeric(10,2), rate numeric(5,2), commission_amount numeric(10,2) NOT NULL,\n  technician_share numeric(10,2), parts_reimbursable numeric(10,2) NOT NULL DEFAULT 0, note text,\n  created_at timestamptz NOT NULL DEFAULT now());\nCREATE INDEX IF NOT EXISTS ledger_tech_idx ON technician_commission_ledger(technician_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS technician_settlements (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), technician_id uuid NOT NULL REFERENCES technicians(id),\n  period_from date, period_to date, due_date date NOT NULL,\n  total_collected numeric(10,2) NOT NULL DEFAULT 0, commission_due numeric(10,2) NOT NULL DEFAULT 0,\n  adjustments numeric(10,2) NOT NULL DEFAULT 0, amount_settled numeric(10,2) NOT NULL DEFAULT 0,\n  method text, reference text,\n  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','submitted','verified','rejected')),\n  verified_by uuid REFERENCES admin_users(id), verified_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());\nCREATE TABLE IF NOT EXISTS settlement_items (\n  settlement_id uuid NOT NULL REFERENCES technician_settlements(id),\n  ledger_id bigint NOT NULL REFERENCES technician_commission_ledger(id), amount numeric(10,2) NOT NULL,\n  PRIMARY KEY (settlement_id, ledger_id));\n\nCREATE TABLE IF NOT EXISTS reviews (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid NOT NULL REFERENCES bookings(id),\n  technician_id uuid NOT NULL REFERENCES technicians(id), rating int NOT NULL CHECK (rating BETWEEN 1 AND 5),\n  comment text, created_at timestamptz NOT NULL DEFAULT now());\nCREATE TABLE IF NOT EXISTS complaints (\n  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), booking_id uuid REFERENCES bookings(id),\n  technician_id uuid REFERENCES technicians(id), description text NOT NULL,\n  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','investigating','resolved','dismissed')),\n  resolution text, resolved_by uuid REFERENCES admin_users(id), created_at timestamptz NOT NULL DEFAULT now());\n\n-- Completed money records and the audit log cannot be silently changed or deleted.\nCREATE OR REPLACE FUNCTION qfb_immutable() RETURNS trigger AS $$\nBEGIN RAISE EXCEPTION '% records cannot be changed or deleted. Add an adjustment instead.', TG_TABLE_NAME; END; $$ LANGUAGE plpgsql;\nDROP TRIGGER IF EXISTS payments_immutable ON payments;\nCREATE TRIGGER payments_immutable BEFORE UPDATE OR DELETE ON payments FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\nDROP TRIGGER IF EXISTS adjustments_immutable ON payment_adjustments;\nCREATE TRIGGER adjustments_immutable BEFORE UPDATE OR DELETE ON payment_adjustments FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\nDROP TRIGGER IF EXISTS audit_immutable ON audit_logs;\nCREATE TRIGGER audit_immutable BEFORE UPDATE OR DELETE ON audit_logs FOR EACH ROW EXECUTE FUNCTION qfb_immutable();\n\n-- ===== Stage 2 additions (idempotent) =====\nCREATE TABLE IF NOT EXISTS app_meta (key text PRIMARY KEY, value text NOT NULL);\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS password_hash text;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS login_enabled boolean NOT NULL DEFAULT false;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT true;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS failed_attempts int NOT NULL DEFAULT 0;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS locked_until timestamptz;\nALTER TABLE technicians ADD COLUMN IF NOT EXISTS last_login_at timestamptz;\nALTER TABLE bookings ADD COLUMN IF NOT EXISTS problem text;\nALTER TABLE bookings ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'whatsapp';\nCREATE INDEX IF NOT EXISTS booking_assign_tech_idx ON booking_assignments(technician_id) WHERE is_current;\n\n-- Service list v2 (runs once). Renames old names, adds new ones, retires the rest (nothing is deleted).\nDO $$ BEGIN\n IF NOT EXISTS (SELECT 1 FROM app_meta WHERE key = 'categories_v2') THEN\n  UPDATE service_categories SET name = 'Electrical Works, Estimating & Costing' WHERE name = 'Electrical work' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Electrical Works, Estimating & Costing');\n  UPDATE service_categories SET name = 'AC Servicing' WHERE name = 'AC repair and installation' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'AC Servicing');\n  UPDATE service_categories SET name = 'Water Tank Cleaning' WHERE name = 'Water tank cleaning' AND NOT EXISTS (SELECT 1 FROM service_categories WHERE name = 'Water Tank Cleaning');\n  INSERT INTO service_categories (name, sort_order) VALUES\n   ('Electrical Works, Estimating & Costing',1),('Plumbing',2),('Home Cleaning',3),('Water Tank Cleaning',4),('AC Servicing',5),('Metal Fabrication, Estimating & Costing',6)\n  ON CONFLICT (name) DO NOTHING;\n  UPDATE service_categories SET\n   sort_order = CASE name WHEN 'Electrical Works, Estimating & Costing' THEN 1 WHEN 'Plumbing' THEN 2 WHEN 'Home Cleaning' THEN 3 WHEN 'Water Tank Cleaning' THEN 4 WHEN 'AC Servicing' THEN 5 WHEN 'Metal Fabrication, Estimating & Costing' THEN 6 ELSE 100 + sort_order END,\n   is_active = name IN ('Electrical Works, Estimating & Costing','Plumbing','Home Cleaning','Water Tank Cleaning','AC Servicing','Metal Fabrication, Estimating & Costing');\n  INSERT INTO app_meta (key, value) VALUES ('categories_v2', 'done');\n END IF;\nEND $$;\n\n-- ===== Stage 3 additions (idempotent) =====\nCREATE SEQUENCE IF NOT EXISTS receipt_seq START 1;\nALTER TABLE technician_agreements DROP CONSTRAINT IF EXISTS technician_agreements_commission_rate_check;\nALTER TABLE technician_agreements DROP CONSTRAINT IF EXISTS qfb_rate_range;\nALTER TABLE technician_agreements ALTER COLUMN commission_rate TYPE numeric(10,2);\nALTER TABLE technician_agreements ADD CONSTRAINT qfb_rate_range CHECK (commission_rate >= 0 AND commission_rate <= 100000);\nALTER TABLE technician_commission_ledger ALTER COLUMN rate TYPE numeric(10,2);\nALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS submitted_amount numeric(10,2);\nALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS submitted_at timestamptz;\nALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS reject_reason text;\nALTER TABLE quote_items ADD COLUMN IF NOT EXISTS pos int NOT NULL DEFAULT 0;\nCREATE UNIQUE INDEX IF NOT EXISTS settlement_item_once ON settlement_items(ledger_id);\nCREATE INDEX IF NOT EXISTS payments_paid_idx ON payments(paid_at);\nCREATE INDEX IF NOT EXISTS payments_booking_idx ON payments(booking_id);\nCREATE INDEX IF NOT EXISTS ledger_booking_idx ON technician_commission_ledger(booking_id);\n\n-- Lock the tables away from Supabase's public Data API (anon/authenticated keys).\n-- The server connects with the database owner role, which is unaffected.\nDO $$ DECLARE r record; BEGIN\n  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP\n    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.tablename);\n  END LOOP;\n  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN\n    REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;\n    REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;\n    REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;\n  END IF;\nEND $$;\n";
   }
 });
 
@@ -5427,7 +5427,7 @@ function agreementData(a) {
   const basis = S(a.commission_basis, 30), sched = S(a.settlement_schedule, 20), rate = Number(a.commission_rate);
   if (!["labour_only", "labour_and_parts", "fixed_per_job", "custom"].includes(basis)) throw bad("Choose a commission basis");
   if (!["daily", "weekly", "fortnightly"].includes(sched)) throw bad("Choose a settlement schedule");
-  if (!(rate >= 0 && rate <= 100)) throw bad("Commission rate must be between 0 and 100");
+  if (!(rate >= 0 && rate <= (basis === "fixed_per_job" ? 1e5 : 100))) throw bad(basis === "fixed_per_job" ? "Enter the fixed amount per job" : "Commission rate must be between 0 and 100");
   return { version: S(a.version, 20) || "v1.0", commission_basis: basis, commission_rate: rate, settlement_schedule: sched };
 }
 var CHECKS = ["mobile_verified", "identity_checked", "address_checked", "skills_assessed", "qualifications_reviewed"];
@@ -5627,6 +5627,8 @@ R("GET", "/technicians/" + TC, async (x) => {
     categories: await one("SELECT c.id,c.name,(s.technician_id IS NOT NULL AND s.approved) approved FROM service_categories c LEFT JOIN technician_skills s ON s.category_id=c.id AND s.technician_id=$1 WHERE c.is_active OR s.technician_id IS NOT NULL ORDER BY c.sort_order"),
     verification: (await one("SELECT v.*,u.name verified_by_name FROM technician_verifications v LEFT JOIN admin_users u ON u.id=v.verified_by WHERE technician_id=$1"))[0],
     agreement: (await one("SELECT * FROM technician_agreements WHERE technician_id=$1 ORDER BY accepted_at DESC LIMIT 1"))[0] || null,
+    ledger: await one(`SELECT l.entry_type,l.commission_amount,l.technician_share,l.note,l.created_at,b.booking_code,p.receipt_no,p.amount_collected,(si.ledger_id IS NOT NULL) settled FROM technician_commission_ledger l LEFT JOIN bookings b ON b.id=l.booking_id LEFT JOIN payments p ON p.id=l.payment_id LEFT JOIN settlement_items si ON si.ledger_id=l.id WHERE l.technician_id=$1 ORDER BY l.created_at DESC,l.id DESC LIMIT 25`),
+    settlements: await one("SELECT id,status,due_date,commission_due,amount_settled,(commission_due+adjustments-amount_settled) balance FROM technician_settlements WHERE technician_id=$1 ORDER BY created_at DESC LIMIT 10"),
     notes: await one("SELECT n.note,n.created_at,u.name admin FROM technician_notes n LEFT JOIN admin_users u ON u.id=n.admin_id WHERE technician_id=$1 ORDER BY n.id DESC LIMIT 30"),
     activity: await one(`SELECT a.action,a.reason,a.created_at,u.name admin FROM audit_logs a LEFT JOIN admin_users u ON u.id=a.admin_id WHERE a.entity_type='technician' AND a.entity_id=$1 ORDER BY a.id DESC LIMIT 30`, [t.tech_code])
   };
@@ -5706,7 +5708,7 @@ R("POST", "/technicians/" + TC + "/notes", async (x) => {
   });
   return { ok: true };
 });
-var SCHEMA_VERSION = 2;
+var SCHEMA_VERSION = 3;
 var upgraded;
 function ensureSchema() {
   if (upgraded) return upgraded;
@@ -5841,7 +5843,8 @@ R("GET", "/bookings/" + BC, async (x) => {
   const b = await loadBooking(x.params[0]);
   const hist = (await Q(`SELECT a.is_current,a.assigned_at,a.ended_at,a.reason,t.tech_code,t.full_name,t.mobile,u.name assigned_by FROM booking_assignments a JOIN technicians t ON t.id=a.technician_id LEFT JOIN admin_users u ON u.id=a.assigned_by WHERE a.booking_id=$1 ORDER BY a.assigned_at DESC`, [b.id])).rows;
   const act = (await Q(`SELECT a.action,a.reason,a.created_at,a.details,u.name admin FROM audit_logs a LEFT JOIN admin_users u ON u.id=a.admin_id WHERE a.entity_type='booking' AND a.entity_id=$1 ORDER BY a.id DESC LIMIT 40`, [b.booking_code])).rows;
-  return { booking: b, current: hist.find((h) => h.is_current) || null, history: hist, activity: act };
+  const cur = hist.find((h) => h.is_current) || null;
+  return Object.assign({ booking: b, current: cur, history: hist, activity: act }, await bookingExtras(b, cur));
 });
 R("GET", "/bookings/" + BC + "/candidates", async (x) => {
   const b = await loadBooking(x.params[0]), area = S(x.query.area, 80) || b.locality || "";
@@ -5942,7 +5945,10 @@ R("POST", "/tech/password", async (x) => {
 R("GET", "/tech/jobs", async (x) => {
   const done = x.query.scope === "done";
   return (await Q(`SELECT b.booking_code,b.work_status,b.address,b.locality,b.preferred_at,b.problem,b.inspection_fee,sc.name service,cu.name customer_name,
-    CASE WHEN b.work_status IN ('completed','cancelled') THEN NULL ELSE cu.mobile END customer_mobile
+    CASE WHEN b.work_status IN ('completed','cancelled') THEN NULL ELSE cu.mobile END customer_mobile,
+    COALESCE((SELECT sum(amount_collected) FROM payments p WHERE p.booking_id=b.id),0) paid,
+    (SELECT q.status FROM quotes q WHERE q.booking_id=b.id ORDER BY q.version DESC LIMIT 1) quote_status,
+    (SELECT COALESCE(sum(qi.qty*qi.unit_price),0) FROM quotes q JOIN quote_items qi ON qi.quote_id=q.id WHERE q.id=(SELECT q2.id FROM quotes q2 WHERE q2.booking_id=b.id ORDER BY q2.version DESC LIMIT 1)) quote_total
     FROM booking_assignments a JOIN bookings b ON b.id=a.booking_id JOIN customers cu ON cu.id=b.customer_id JOIN service_categories sc ON sc.id=b.category_id
     WHERE a.technician_id=$1 AND a.is_current AND b.work_status ${done ? "" : "NOT "}IN ('completed','cancelled')
     ORDER BY ${done ? "b.updated_at DESC" : "b.preferred_at NULLS LAST, b.created_at"} LIMIT 50`, [x.tech.id])).rows;
@@ -5959,6 +5965,469 @@ R("POST", "/tech/jobs/(QF-\\d+)/status", async (x) => {
   });
   return { ok: true, status: st };
 }, "tech");
+var round2 = (n) => Math.round(n * 100) / 100;
+var num = (v, label, max = 1e6) => {
+  if (v === "" || v == null) return 0;
+  const n = Number(v);
+  if (!(n >= 0 && n <= max)) throw bad(label + " must be 0 or more");
+  return round2(n);
+};
+var IST = "AT TIME ZONE 'Asia/Kolkata'";
+var METHODS = ["cash", "upi", "bank", "other"];
+var dateParam = (v, d) => {
+  v = S(v, 10);
+  if (!v) return d;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw bad("Invalid date");
+  return v;
+};
+async function bookingExtras(b, cur) {
+  const qr = (await Q("SELECT * FROM quotes WHERE booking_id=$1 ORDER BY version DESC LIMIT 1", [b.id])).rows[0];
+  let quote = null;
+  if (qr) {
+    const items = (await Q("SELECT kind,description,qty,unit_price FROM quote_items WHERE quote_id=$1 ORDER BY pos", [qr.id])).rows;
+    quote = { id: qr.id, version: qr.version, status: qr.status, approved_at: qr.approved_at, items, total: round2(items.reduce((a, i) => a + Number(i.qty) * Number(i.unit_price), 0)) };
+  }
+  const payments = (await Q(`SELECT p.receipt_no,p.paid_at,p.method,p.labour_amount,p.parts_amount,p.discount,p.amount_collected,t.tech_code,l.commission_amount commission,l.technician_share,
+    COALESCE((SELECT sum(amount) FROM payment_adjustments ad WHERE ad.payment_id=p.id AND ad.kind='refund'),0) refunded
+    FROM payments p JOIN technicians t ON t.id=p.technician_id LEFT JOIN technician_commission_ledger l ON l.payment_id=p.id AND l.entry_type='commission' WHERE p.booking_id=$1 ORDER BY p.paid_at DESC`, [b.id])).rows;
+  const review = (await Q("SELECT rating,comment,created_at FROM reviews WHERE booking_id=$1 LIMIT 1", [b.id])).rows[0] || null;
+  const complaints = (await Q("SELECT id,description,status,resolution,created_at FROM complaints WHERE booking_id=$1 ORDER BY created_at DESC", [b.id])).rows;
+  const agreement = cur ? (await Q("SELECT a.commission_basis,a.commission_rate FROM technician_agreements a JOIN technicians t ON t.id=a.technician_id WHERE t.tech_code=$1 ORDER BY a.accepted_at DESC LIMIT 1", [cur.tech_code])).rows[0] || null : null;
+  return { quote, payments, review, complaints, agreement };
+}
+var QKINDS = ["labour", "parts", "travel", "other"];
+R("POST", "/bookings/" + BC + "/quote", async (x) => {
+  const b = await loadBooking(x.params[0]);
+  if (["completed", "cancelled"].includes(b.work_status)) throw bad("This booking is " + b.work_status);
+  const items = (Array.isArray(x.body.items) ? x.body.items : []).slice(0, 30).map((i) => ({ kind: S(i.kind, 10), description: S(i.description, 200), qty: Number(i.qty || 1), price: Number(i.unit_price) })).filter((i) => i.description);
+  if (!items.length) throw bad("Add at least one line");
+  items.forEach((i) => {
+    if (!QKINDS.includes(i.kind)) throw bad("Invalid line type");
+    if (!(i.qty > 0 && i.qty <= 1e4)) throw bad("Quantity must be more than 0");
+    if (!(i.price >= 0 && i.price <= 1e6)) throw bad("Price must be 0 or more");
+  });
+  await tx(async (c) => {
+    await c.query("UPDATE quotes SET status='superseded' WHERE booking_id=$1 AND status IN ('pending','accepted')", [b.id]);
+    const v = Number((await c.query("SELECT COALESCE(max(version),0)+1 v FROM quotes WHERE booking_id=$1", [b.id])).rows[0].v);
+    const q = (await c.query("INSERT INTO quotes(booking_id,version) VALUES($1,$2) RETURNING id", [b.id, v])).rows[0];
+    for (let k = 0; k < items.length; k++) await c.query("INSERT INTO quote_items(quote_id,kind,description,qty,unit_price,pos) VALUES($1,$2,$3,$4,$5,$6)", [q.id, items[k].kind, items[k].description, items[k].qty, items[k].price, k]);
+    await c.query("UPDATE bookings SET work_status='quote_pending', updated_at=now() WHERE id=$1 AND work_status IN ('arrived','diagnosing','quote_rejected','quote_pending')", [b.id]);
+    await audit(c, x, "booking.quote.created", "booking", b.booking_code, null, { version: v });
+  });
+  return { ok: true };
+});
+R("POST", "/bookings/" + BC + "/quote/(accepted|rejected)", async (x) => {
+  const b = await loadBooking(x.params[0]), st = x.params[1], reason = S(x.body.reason, 500);
+  const q = (await Q("SELECT id,status FROM quotes WHERE booking_id=$1 ORDER BY version DESC LIMIT 1", [b.id])).rows[0];
+  if (!q || q.status !== "pending") throw bad("There is no pending quote");
+  if (st === "rejected" && reason.length < 3) throw bad("A reason is required");
+  await tx(async (c) => {
+    await c.query("UPDATE quotes SET status=$1, approved_at=CASE WHEN $1='accepted' THEN now() END WHERE id=$2", [st, q.id]);
+    await c.query("UPDATE bookings SET work_status=CASE WHEN work_status IN ('completed','cancelled','disputed','in_progress') THEN work_status ELSE $1 END, updated_at=now() WHERE id=$2", ["quote_" + st, b.id]);
+    await audit(c, x, "booking.quote." + st, "booking", b.booking_code, reason || null);
+  });
+  return { ok: true };
+});
+async function recordPayment(c, x, actor, b, tech, d) {
+  const labour = num(d.labour, "Labour"), parts = num(d.parts, "Parts"), discount = num(d.discount, "Discount"), collected = num(d.collected, "Amount collected");
+  if (!(collected > 0)) throw bad("Enter the amount collected");
+  const method = S(d.method, 10);
+  if (!METHODS.includes(method)) throw bad("Choose a payment method");
+  const ag = (await c.query("SELECT * FROM technician_agreements WHERE technician_id=$1 ORDER BY accepted_at DESC LIMIT 1", [tech.id])).rows[0];
+  if (!ag) throw bad("No accepted agreement on file for this technician. Record the agreement first.");
+  const rate = Number(ag.commission_rate);
+  let base = null, comm = null;
+  if (ag.commission_basis === "labour_only") {
+    base = Math.max(labour - discount, 0);
+    comm = round2(base * rate / 100);
+  } else if (ag.commission_basis === "labour_and_parts") {
+    base = Math.max(labour + parts - discount, 0);
+    comm = round2(base * rate / 100);
+  } else if (ag.commission_basis === "fixed_per_job") comm = rate;
+  if (actor === "admin" && d.commission_override !== "" && d.commission_override != null) comm = num(d.commission_override, "Commission");
+  if (comm == null) throw bad("This technician has a custom commission rule. The office must enter the commission amount.");
+  comm = Math.min(comm, collected);
+  const receipt = (await c.query("SELECT 'QFR-' || to_char(now() AT TIME ZONE 'Asia/Kolkata','YYMM') || '-' || lpad(nextval('receipt_seq')::text,5,'0') AS r")).rows[0].r;
+  const pay = (await c.query("INSERT INTO payments(booking_id,technician_id,receipt_no,labour_amount,parts_amount,discount,amount_collected,method,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id", [b.id, tech.id, receipt, labour, parts, discount, collected, method, actor === "admin" ? x.admin.id : null])).rows[0];
+  await c.query("INSERT INTO technician_commission_ledger(technician_id,payment_id,booking_id,entry_type,basis_amount,rate,commission_amount,technician_share,parts_reimbursable) VALUES($1,$2,$3,'commission',$4,$5,$6,$7,$8)", [tech.id, pay.id, b.id, base, rate, comm, round2(collected - comm), ag.commission_basis === "labour_only" ? parts : 0]);
+  const tot = Number((await c.query("SELECT COALESCE(sum(amount_collected),0) t FROM payments WHERE booking_id=$1", [b.id])).rows[0].t);
+  const qt = Number((await c.query("SELECT COALESCE(sum(qi.qty*qi.unit_price),0) t FROM quotes q JOIN quote_items qi ON qi.quote_id=q.id WHERE q.booking_id=$1 AND q.status='accepted'", [b.id])).rows[0].t);
+  await c.query("UPDATE bookings SET payment_status=$1, settlement_status='due', updated_at=now() WHERE id=$2", [qt > 0 && tot < qt ? "partial" : "paid", b.id]);
+  await audit(c, actor === "admin" ? x : { admin: null, ip: x.ip }, "payment.recorded", "booking", b.booking_code, null, { receipt, collected, commission: comm, actor: actor === "admin" ? "admin" : "technician", tech_code: tech.tech_code });
+  return { receipt_no: receipt, commission: comm, technician_share: round2(collected - comm) };
+}
+R("POST", "/bookings/" + BC + "/payment", async (x) => {
+  const b = await loadBooking(x.params[0]);
+  if (["requested", "confirmed", "cancelled"].includes(b.work_status)) throw bad("Payment can be recorded once a technician is assigned and the job is under way");
+  const tech = (await Q("SELECT t.* FROM booking_assignments a JOIN technicians t ON t.id=a.technician_id WHERE a.booking_id=$1 AND a.is_current", [b.id])).rows[0];
+  if (!tech) throw bad("Assign a technician first");
+  return await tx((c) => recordPayment(c, x, "admin", b, tech, x.body));
+});
+R("POST", "/tech/jobs/(QF-\\d+)/payment", async (x) => {
+  const b = (await Q("SELECT b.* FROM bookings b JOIN booking_assignments a ON a.booking_id=b.id AND a.is_current WHERE b.booking_code=$1 AND a.technician_id=$2", [x.params[0], x.tech.id])).rows[0];
+  if (!b) throw new HttpError(404, "Job not found");
+  if (!["in_progress", "completed"].includes(b.work_status)) throw bad("Record payment after the work has started");
+  if ((await Q("SELECT 1 FROM payments WHERE booking_id=$1", [b.id])).rowCount) throw bad("A payment is already recorded for this job. Contact the office to change it.");
+  const tech = (await Q("SELECT * FROM technicians WHERE id=$1", [x.tech.id])).rows[0];
+  return await tx((c) => recordPayment(c, x, "tech", b, tech, Object.assign({}, x.body, { commission_override: null })));
+}, "tech");
+R("POST", "/payments/(QFR-\\d{4}-\\d+)/refund", async (x) => {
+  const p = (await Q("SELECT p.*,b.booking_code FROM payments p JOIN bookings b ON b.id=p.booking_id WHERE p.receipt_no=$1", [x.params[0]])).rows[0];
+  if (!p) throw new HttpError(404, "Payment not found");
+  const amt = num(x.body.amount, "Refund amount"), reason = S(x.body.reason, 500);
+  if (!(amt > 0)) throw bad("Enter the refund amount");
+  if (reason.length < 3) throw bad("A reason is required");
+  const done = Number((await Q("SELECT COALESCE(sum(amount),0) t FROM payment_adjustments WHERE payment_id=$1 AND kind='refund'", [p.id])).rows[0].t);
+  if (amt > Number(p.amount_collected) - done + 1e-3) throw bad("Refund is more than the amount still refundable (" + round2(Number(p.amount_collected) - done) + ")");
+  await tx(async (c) => {
+    await c.query("INSERT INTO payment_adjustments(payment_id,kind,amount,reason,created_by) VALUES($1,'refund',$2,$3,$4)", [p.id, amt, reason, x.admin.id]);
+    const l = (await c.query("SELECT commission_amount FROM technician_commission_ledger WHERE payment_id=$1 AND entry_type='commission'", [p.id])).rows[0];
+    const rev = l ? -round2(Number(l.commission_amount) * amt / Number(p.amount_collected)) : 0;
+    await c.query("INSERT INTO technician_commission_ledger(technician_id,payment_id,booking_id,entry_type,commission_amount,technician_share,note) VALUES($1,$2,$3,'refund_reversal',$4,$5,$6)", [p.technician_id, p.id, p.booking_id, rev, -round2(amt + rev), "Refund: " + reason]);
+    if (done + amt >= Number(p.amount_collected) - 1e-3) await c.query("UPDATE bookings SET payment_status='refunded' WHERE id=$1", [p.booking_id]);
+    await audit(c, x, "payment.refunded", "booking", p.booking_code, reason, { receipt: p.receipt_no, amount: amt });
+  });
+  return { ok: true };
+});
+R("GET", "/payments", async (x) => {
+  const q = x.query, w = [], p = [], add = (s, v) => {
+    p.push(v);
+    w.push(s.replace("?", "$" + p.length));
+  };
+  if (q.q) {
+    p.push("%" + S(q.q, 60).toLowerCase() + "%");
+    w.push(`(lower(p.receipt_no) LIKE $${p.length} OR lower(b.booking_code) LIKE $${p.length} OR lower(t.tech_code) LIKE $${p.length} OR lower(t.full_name) LIKE $${p.length})`);
+  }
+  if (q.method) add("p.method=?", S(q.method, 10));
+  if (q.from) add(`(p.paid_at ${IST})::date >= ?::date`, dateParam(q.from));
+  if (q.to) add(`(p.paid_at ${IST})::date <= ?::date`, dateParam(q.to));
+  const base = `FROM payments p JOIN bookings b ON b.id=p.booking_id JOIN technicians t ON t.id=p.technician_id LEFT JOIN technician_commission_ledger l ON l.payment_id=p.id AND l.entry_type='commission' ${w.length ? "WHERE " + w.join(" AND ") : ""}`;
+  const page = Math.max(1, parseInt(q.page, 10) || 1), size = 20, agg = (await Q("SELECT count(*) n, COALESCE(sum(p.amount_collected),0) collected, COALESCE(sum(l.commission_amount),0) commission " + base, p)).rows[0];
+  const rows = (await Q(`SELECT p.receipt_no,p.paid_at,p.method,p.amount_collected,b.booking_code,t.tech_code,t.full_name tech_name,l.commission_amount commission,l.technician_share,COALESCE((SELECT sum(amount) FROM payment_adjustments ad WHERE ad.payment_id=p.id AND ad.kind='refund'),0) refunded ${base} ORDER BY p.paid_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, p)).rows;
+  const total = Number(agg.n);
+  return { rows, total, page, pages: Math.max(1, Math.ceil(total / size)), collected: Number(agg.collected), commission: Number(agg.commission) };
+});
+R("POST", "/technicians/" + TC + "/adjustments", async (x) => {
+  const t = await loadTech(x.params[0]), amt = Number(x.body.amount), reason = S(x.body.reason, 500);
+  if (!(Math.abs(amt) > 0 && Math.abs(amt) <= 1e6)) throw bad("Enter an adjustment amount (use a minus sign to reduce what the technician owes)");
+  if (reason.length < 3) throw bad("A reason is required");
+  await tx(async (c) => {
+    await c.query("INSERT INTO technician_commission_ledger(technician_id,entry_type,commission_amount,note) VALUES($1,'adjustment',$2,$3)", [t.id, round2(amt), reason]);
+    await audit(c, x, "technician.ledger.adjustment", "technician", t.tech_code, reason, { amount: round2(amt) });
+  });
+  return { ok: true };
+});
+var SETUUID = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+R("GET", "/settlements/unsettled", async () => (await Q(`SELECT t.tech_code,t.full_name,count(*) entries,sum(l.commission_amount) amount FROM technician_commission_ledger l JOIN technicians t ON t.id=l.technician_id
+  WHERE NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.ledger_id=l.id) GROUP BY t.id HAVING sum(l.commission_amount) <> 0 ORDER BY amount DESC`)).rows);
+R("GET", "/settlements", async (x) => {
+  const q = x.query, w = [], p = [];
+  if (q.status === "overdue") w.push("s.status IN ('pending','submitted','rejected') AND s.due_date < (now() AT TIME ZONE 'Asia/Kolkata')::date");
+  else if (q.status) {
+    p.push(S(q.status, 12));
+    w.push("s.status=$" + p.length);
+  }
+  if (q.q) {
+    p.push("%" + S(q.q, 60).toLowerCase() + "%");
+    w.push(`(lower(t.tech_code) LIKE $${p.length} OR lower(t.full_name) LIKE $${p.length})`);
+  }
+  const base = `FROM technician_settlements s JOIN technicians t ON t.id=s.technician_id ${w.length ? "WHERE " + w.join(" AND ") : ""}`;
+  const page = Math.max(1, parseInt(q.page, 10) || 1), size = 20, total = Number((await Q("SELECT count(*) " + base, p)).rows[0].count);
+  const rows = (await Q(`SELECT s.id,s.status,s.due_date,s.commission_due,s.amount_settled,s.submitted_amount,s.created_at,t.tech_code,t.full_name, (s.commission_due+s.adjustments-s.amount_settled) balance ${base} ORDER BY s.created_at DESC LIMIT ${size} OFFSET ${(page - 1) * size}`, p)).rows;
+  return { rows, total, page, pages: Math.max(1, Math.ceil(total / size)) };
+});
+R("POST", "/technicians/" + TC + "/settlements", async (x) => {
+  const t = await loadTech(x.params[0]);
+  const ag = (await Q("SELECT settlement_schedule FROM technician_agreements WHERE technician_id=$1 ORDER BY accepted_at DESC LIMIT 1", [t.id])).rows[0];
+  const days = x.body.due_date ? null : { daily: 1, weekly: 7, fortnightly: 14 }[ag && ag.settlement_schedule] || 7;
+  const due = x.body.due_date ? dateParam(x.body.due_date) : null;
+  return await tx(async (c) => {
+    const ent = (await c.query("SELECT l.id,l.commission_amount,l.payment_id,l.entry_type,l.created_at FROM technician_commission_ledger l WHERE l.technician_id=$1 AND NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.ledger_id=l.id) FOR UPDATE", [t.id])).rows;
+    const sum = round2(ent.reduce((a, e) => a + Number(e.commission_amount), 0));
+    if (!ent.length || !(sum > 0)) throw bad("Nothing to settle right now");
+    const pids = ent.filter((e) => e.payment_id && e.entry_type === "commission").map((e) => e.payment_id);
+    const coll = pids.length ? Number((await c.query("SELECT COALESCE(sum(amount_collected),0) - COALESCE((SELECT sum(amount) FROM payment_adjustments WHERE kind='refund' AND payment_id = ANY($1)),0) t FROM payments WHERE id = ANY($1)", [pids])).rows[0].t) : 0;
+    const dates = ent.map((e) => e.created_at), mn = new Date(Math.min.apply(null, dates)), mx = new Date(Math.max.apply(null, dates));
+    const st = (await c.query(`INSERT INTO technician_settlements(technician_id,period_from,period_to,due_date,total_collected,commission_due) VALUES($1,$2,$3,${due ? "$5::date" : "((now() AT TIME ZONE 'Asia/Kolkata')::date + $5::int)"},$4,$6) RETURNING id`, [t.id, mn.toISOString().slice(0, 10), mx.toISOString().slice(0, 10), round2(coll), due || days, sum])).rows[0];
+    for (const e of ent) await c.query("INSERT INTO settlement_items(settlement_id,ledger_id,amount) VALUES($1,$2,$3)", [st.id, e.id, e.commission_amount]);
+    await audit(c, x, "settlement.created", "technician", t.tech_code, null, { settlement: st.id, commission_due: sum, entries: ent.length });
+    return { id: st.id, commission_due: sum };
+  });
+});
+R("GET", "/settlements/" + SETUUID, async (x) => {
+  const s = (await Q(`SELECT s.*,(s.commission_due+s.adjustments-s.amount_settled) balance,t.tech_code,t.full_name,t.mobile,u.name verified_by_name FROM technician_settlements s JOIN technicians t ON t.id=s.technician_id LEFT JOIN admin_users u ON u.id=s.verified_by WHERE s.id=$1`, [x.params[0]])).rows[0];
+  if (!s) throw new HttpError(404, "Settlement not found");
+  const items = (await Q(`SELECT l.entry_type,l.commission_amount,l.note,l.created_at,b.booking_code,p.receipt_no,p.amount_collected FROM settlement_items si JOIN technician_commission_ledger l ON l.id=si.ledger_id LEFT JOIN bookings b ON b.id=l.booking_id LEFT JOIN payments p ON p.id=l.payment_id WHERE si.settlement_id=$1 ORDER BY l.created_at`, [s.id])).rows;
+  const act = (await Q(`SELECT a.action,a.reason,a.created_at,u.name admin FROM audit_logs a LEFT JOIN admin_users u ON u.id=a.admin_id WHERE a.entity_type='settlement' AND a.entity_id=$1 ORDER BY a.id DESC`, [s.id])).rows;
+  return { settlement: s, items, activity: act };
+});
+R("POST", "/settlements/" + SETUUID + "/verify", async (x) => {
+  const s = (await Q("SELECT * FROM technician_settlements WHERE id=$1", [x.params[0]])).rows[0];
+  if (!s) throw new HttpError(404, "Settlement not found");
+  if (s.status === "verified") throw bad("This settlement is already verified");
+  const amt = num(x.body.amount, "Amount received"), method = S(x.body.method, 10), ref = S(x.body.reference, 100);
+  if (!(amt > 0)) throw bad("Enter the amount you received");
+  if (!METHODS.includes(method)) throw bad("Choose how it was paid");
+  if (method !== "cash" && ref.length < 3) throw bad("Enter the transfer or UPI reference number");
+  await tx(async (c) => {
+    await c.query("UPDATE technician_settlements SET status='verified', amount_settled=$1, method=$2, reference=$3, verified_by=$4, verified_at=now(), reject_reason=NULL WHERE id=$5", [amt, method, ref || null, x.admin.id, s.id]);
+    await audit(c, x, "settlement.verified", "settlement", s.id, null, { amount: amt, method, reference: ref });
+  });
+  return { ok: true };
+});
+R("POST", "/settlements/" + SETUUID + "/reject", async (x) => {
+  const s = (await Q("SELECT * FROM technician_settlements WHERE id=$1", [x.params[0]])).rows[0], reason = S(x.body.reason, 500);
+  if (!s) throw new HttpError(404, "Settlement not found");
+  if (s.status !== "submitted") throw bad("Only a submitted settlement can be rejected");
+  if (reason.length < 3) throw bad("A reason is required");
+  await tx(async (c) => {
+    await c.query("UPDATE technician_settlements SET status='rejected', reject_reason=$1 WHERE id=$2", [reason, s.id]);
+    await audit(c, x, "settlement.rejected", "settlement", s.id, reason);
+  });
+  return { ok: true };
+});
+R("GET", "/tech/money", async (x) => {
+  const t = x.tech.id;
+  const tot = (await Q("SELECT COALESCE((SELECT sum(commission_amount) FROM technician_commission_ledger WHERE technician_id=$1),0) owed, COALESCE((SELECT sum(amount_settled) FROM technician_settlements WHERE technician_id=$1 AND status='verified'),0) settled, COALESCE((SELECT sum(l.commission_amount) FROM technician_commission_ledger l WHERE l.technician_id=$1 AND NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.ledger_id=l.id)),0) unsettled, COALESCE((SELECT sum(amount_collected) FROM payments WHERE technician_id=$1),0) collected", [t])).rows[0];
+  const settlements = (await Q("SELECT id,status,due_date,commission_due,amount_settled,submitted_amount,reject_reason,(commission_due+adjustments-amount_settled) balance FROM technician_settlements WHERE technician_id=$1 ORDER BY created_at DESC LIMIT 15", [t])).rows;
+  return { collected: Number(tot.collected), owed: Number(tot.owed), settled: Number(tot.settled), outstanding: Number(tot.owed) - Number(tot.settled), unsettled: Number(tot.unsettled), settlements };
+}, "tech");
+R("POST", "/tech/settlements/" + SETUUID + "/submit", async (x) => {
+  const s = (await Q("SELECT * FROM technician_settlements WHERE id=$1 AND technician_id=$2", [x.params[0], x.tech.id])).rows[0];
+  if (!s) throw new HttpError(404, "Settlement not found");
+  if (!["pending", "rejected"].includes(s.status)) throw bad("This settlement cannot be submitted");
+  const amt = num(x.body.amount, "Amount"), method = S(x.body.method, 10), ref = S(x.body.reference, 100);
+  if (!(amt > 0)) throw bad("Enter the amount you sent");
+  if (!METHODS.includes(method)) throw bad("Choose how you paid");
+  if (method !== "cash" && ref.length < 3) throw bad("Enter the UPI or transfer reference number");
+  await tx(async (c) => {
+    await c.query("UPDATE technician_settlements SET status='submitted', submitted_amount=$1, submitted_at=now(), method=$2, reference=$3, reject_reason=NULL WHERE id=$4", [amt, method, ref || null, s.id]);
+    await audit(c, { admin: null, ip: x.ip }, "settlement.submitted", "settlement", s.id, null, { actor: "technician", tech_code: x.tech.tech_code, amount: amt });
+  });
+  return { ok: true };
+}, "tech");
+R("POST", "/bookings/" + BC + "/review", async (x) => {
+  const b = await loadBooking(x.params[0]), r = parseInt(x.body.rating, 10);
+  if (!(r >= 1 && r <= 5)) throw bad("Rating must be 1 to 5");
+  const cur = (await Q("SELECT technician_id FROM booking_assignments WHERE booking_id=$1 AND is_current", [b.id])).rows[0];
+  if (!cur) throw bad("No technician was assigned to this booking");
+  if ((await Q("SELECT 1 FROM reviews WHERE booking_id=$1", [b.id])).rowCount) throw bad("This booking already has a rating");
+  await tx(async (c) => {
+    await c.query("INSERT INTO reviews(booking_id,technician_id,rating,comment) VALUES($1,$2,$3,$4)", [b.id, cur.technician_id, r, opt(x.body.comment, 500)]);
+    await audit(c, x, "booking.review", "booking", b.booking_code, null, { rating: r });
+  });
+  return { ok: true };
+});
+R("POST", "/bookings/" + BC + "/complaints", async (x) => {
+  const b = await loadBooking(x.params[0]), d = req(x.body.description, "Complaint", 1e3);
+  const cur = (await Q("SELECT technician_id FROM booking_assignments WHERE booking_id=$1 AND is_current", [b.id])).rows[0];
+  await tx(async (c) => {
+    await c.query("INSERT INTO complaints(booking_id,technician_id,description) VALUES($1,$2,$3)", [b.id, cur ? cur.technician_id : null, d]);
+    await c.query("UPDATE bookings SET complaint_status='open' WHERE id=$1", [b.id]);
+    await audit(c, x, "booking.complaint", "booking", b.booking_code);
+  });
+  return { ok: true };
+});
+R("PATCH", "/complaints/" + SETUUID, async (x) => {
+  const k = (await Q("SELECT c.*,b.booking_code FROM complaints c LEFT JOIN bookings b ON b.id=c.booking_id WHERE c.id=$1", [x.params[0]])).rows[0], st = S(x.body.status, 15), res = S(x.body.resolution, 500);
+  if (!k) throw new HttpError(404, "Complaint not found");
+  if (!["investigating", "resolved", "dismissed"].includes(st)) throw bad("Invalid status");
+  if (["resolved", "dismissed"].includes(st) && res.length < 3) throw bad("Write the resolution");
+  await tx(async (c) => {
+    await c.query("UPDATE complaints SET status=$1, resolution=COALESCE($2,resolution), resolved_by=CASE WHEN $1 IN ('resolved','dismissed') THEN $3::uuid END WHERE id=$4", [st, res || null, x.admin.id, k.id]);
+    if (k.booking_id) await c.query("UPDATE bookings SET complaint_status=$1 WHERE id=$2", [st, k.booking_id]);
+    await audit(c, x, "complaint." + st, "booking", k.booking_code || "-", res || null);
+  });
+  return { ok: true };
+});
+var REP = {
+  onboarding: {
+    title: "Technician onboarding and verification",
+    dates: true,
+    cols: [["tech_code", "Technician ID"], ["full_name", "Name"], ["mobile", "Mobile"], ["locality", "Area"], ["skills", "Approved services"], ["status", "Account status"], ["verification_status", "Verification"], ["onboarded", "Onboarded", "dt"], ["verified_at", "Verified on", "dt"], ["verified_by", "Verified by"], ["agreement", "Agreement"], ["commission", "Commission rule"]],
+    sql: `SELECT t.tech_code,t.full_name,t.mobile,t.locality,(SELECT string_agg(c.name,', ' ORDER BY c.sort_order) FROM technician_skills s JOIN service_categories c ON c.id=s.category_id WHERE s.technician_id=t.id AND s.approved) skills,t.status,t.verification_status,t.created_at onboarded,v.verified_at,u.name verified_by,
+      ag.version||' ('||to_char(ag.accepted_at ${IST},'YYYY-MM-DD')||')' agreement, replace(ag.commission_basis,'_',' ')||' '||ag.commission_rate commission
+      FROM technicians t LEFT JOIN technician_verifications v ON v.technician_id=t.id LEFT JOIN admin_users u ON u.id=v.verified_by
+      LEFT JOIN LATERAL (SELECT * FROM technician_agreements a WHERE a.technician_id=t.id ORDER BY a.accepted_at DESC LIMIT 1) ag ON true
+      WHERE (t.created_at ${IST})::date BETWEEN $1::date AND $2::date ORDER BY t.tech_code`
+  },
+  performance: {
+    title: "Technician activity and performance (jobs completed)",
+    dates: true,
+    cols: [["tech_code", "Technician ID"], ["full_name", "Name"], ["status", "Status"], ["assigned", "Jobs assigned", "num"], ["completed", "Completed", "num"], ["cancelled", "Cancelled", "num"], ["collected", "Cash collected", "money"], ["commission", "Commission", "money"], ["rating", "Avg rating", "num"], ["complaints", "Complaints", "num"]],
+    sql: `SELECT t.tech_code,t.full_name,t.status,count(b.id) assigned,count(b.id) FILTER (WHERE b.work_status='completed') completed,count(b.id) FILTER (WHERE b.work_status='cancelled') cancelled,
+      COALESCE(sum(pay.collected),0) collected,COALESCE(sum(pay.commission),0) commission,
+      (SELECT round(avg(r.rating),1) FROM reviews r WHERE r.technician_id=t.id) rating,(SELECT count(*) FROM complaints k WHERE k.technician_id=t.id) complaints
+      FROM technicians t LEFT JOIN booking_assignments a ON a.technician_id=t.id AND a.is_current
+      LEFT JOIN bookings b ON b.id=a.booking_id AND (b.created_at ${IST})::date BETWEEN $1::date AND $2::date
+      LEFT JOIN LATERAL (SELECT (SELECT sum(amount_collected) FROM payments p WHERE p.booking_id=b.id AND p.technician_id=t.id) collected,(SELECT sum(commission_amount) FROM technician_commission_ledger l WHERE l.booking_id=b.id AND l.technician_id=t.id) commission) pay ON true
+      GROUP BY t.id ORDER BY completed DESC,t.tech_code`
+  },
+  collections: {
+    title: "Cash collections",
+    dates: true,
+    cols: [["receipt_no", "Receipt"], ["paid_at", "Paid on", "dt"], ["booking_code", "Booking"], ["tech_code", "Technician ID"], ["tech_name", "Technician"], ["service", "Service"], ["locality", "Area"], ["labour", "Labour", "money"], ["parts", "Parts", "money"], ["discount", "Discount", "money"], ["collected", "Collected", "money"], ["method", "Method"], ["refunded", "Refunded", "money"]],
+    sql: `SELECT p.receipt_no,p.paid_at,b.booking_code,t.tech_code,t.full_name tech_name,sc.name service,b.locality,p.labour_amount labour,p.parts_amount parts,p.discount,p.amount_collected collected,p.method,
+      COALESCE((SELECT sum(amount) FROM payment_adjustments ad WHERE ad.payment_id=p.id AND ad.kind='refund'),0) refunded
+      FROM payments p JOIN bookings b ON b.id=p.booking_id JOIN technicians t ON t.id=p.technician_id JOIN service_categories sc ON sc.id=b.category_id
+      WHERE (p.paid_at ${IST})::date BETWEEN $1::date AND $2::date ORDER BY p.paid_at DESC`
+  },
+  commission: {
+    title: "Commission earned (ledger)",
+    dates: true,
+    cols: [["created_at", "Date", "dt"], ["tech_code", "Technician ID"], ["full_name", "Technician"], ["booking_code", "Booking"], ["receipt_no", "Receipt"], ["entry_type", "Entry"], ["basis_amount", "Basis", "money"], ["rate", "Rate", "num"], ["commission_amount", "Commission", "money"], ["technician_share", "Technician share", "money"], ["note", "Note"]],
+    sql: `SELECT l.created_at,t.tech_code,t.full_name,b.booking_code,p.receipt_no,l.entry_type,l.basis_amount,l.rate,l.commission_amount,l.technician_share,l.note
+      FROM technician_commission_ledger l JOIN technicians t ON t.id=l.technician_id LEFT JOIN bookings b ON b.id=l.booking_id LEFT JOIN payments p ON p.id=l.payment_id
+      WHERE (l.created_at ${IST})::date BETWEEN $1::date AND $2::date ORDER BY l.created_at DESC`
+  },
+  outstanding: {
+    title: "Outstanding technician settlements (today)",
+    dates: false,
+    cols: [["tech_code", "Technician ID"], ["full_name", "Name"], ["owed", "Commission owed", "money"], ["settled", "Settled (verified)", "money"], ["outstanding", "Outstanding", "money"], ["unsettled", "Not yet in a settlement", "money"], ["unsettled_entries", "Entries", "num"], ["oldest", "Oldest entry"]],
+    sql: `SELECT t.tech_code,t.full_name,COALESCE(l.owed,0) owed,COALESCE(s.settled,0) settled,COALESCE(l.owed,0)-COALESCE(s.settled,0) outstanding,COALESCE(u.amount,0) unsettled,COALESCE(u.entries,0) unsettled_entries,u.oldest
+      FROM technicians t
+      LEFT JOIN (SELECT technician_id,sum(commission_amount) owed FROM technician_commission_ledger GROUP BY 1) l ON l.technician_id=t.id
+      LEFT JOIN (SELECT technician_id,sum(amount_settled) settled FROM technician_settlements WHERE status='verified' GROUP BY 1) s ON s.technician_id=t.id
+      LEFT JOIN (SELECT technician_id,sum(commission_amount) amount,count(*) entries,to_char(min(created_at) ${IST},'YYYY-MM-DD') oldest FROM technician_commission_ledger lg WHERE NOT EXISTS (SELECT 1 FROM settlement_items si WHERE si.ledger_id=lg.id) GROUP BY 1) u ON u.technician_id=t.id
+      WHERE COALESCE(l.owed,0)<>0 OR COALESCE(s.settled,0)<>0 ORDER BY outstanding DESC`
+  },
+  settlements: {
+    title: "Settlements received and pending",
+    dates: true,
+    cols: [["created_at", "Created", "dt"], ["tech_code", "Technician ID"], ["full_name", "Technician"], ["due_date", "Due date"], ["status", "Status"], ["commission_due", "Commission due", "money"], ["amount_settled", "Received (verified)", "money"], ["method", "Method"], ["reference", "Reference"], ["verified_by", "Verified by"], ["verified_at", "Verified on", "dt"]],
+    sql: `SELECT s.created_at,t.tech_code,t.full_name,to_char(s.due_date,'YYYY-MM-DD') due_date,s.status,s.commission_due,s.amount_settled,s.method,s.reference,u.name verified_by,s.verified_at
+      FROM technician_settlements s JOIN technicians t ON t.id=s.technician_id LEFT JOIN admin_users u ON u.id=s.verified_by
+      WHERE (s.created_at ${IST})::date BETWEEN $1::date AND $2::date ORDER BY s.created_at DESC`
+  },
+  refunds: {
+    title: "Refunds and adjustments",
+    dates: true,
+    cols: [["created_at", "Date", "dt"], ["receipt_no", "Receipt"], ["booking_code", "Booking"], ["tech_code", "Technician ID"], ["kind", "Type"], ["amount", "Amount", "money"], ["reason", "Reason"], ["recorded_by", "Recorded by"]],
+    sql: `SELECT ad.created_at,p.receipt_no,b.booking_code,t.tech_code,ad.kind,ad.amount,ad.reason,u.name recorded_by FROM payment_adjustments ad JOIN payments p ON p.id=ad.payment_id JOIN bookings b ON b.id=p.booking_id JOIN technicians t ON t.id=p.technician_id LEFT JOIN admin_users u ON u.id=ad.created_by
+      WHERE (ad.created_at ${IST})::date BETWEEN $1::date AND $2::date
+      UNION ALL
+      SELECT l.created_at,NULL,NULL,t.tech_code,'commission adjustment',l.commission_amount,l.note,NULL FROM technician_commission_ledger l JOIN technicians t ON t.id=l.technician_id WHERE l.entry_type='adjustment' AND (l.created_at ${IST})::date BETWEEN $1::date AND $2::date
+      ORDER BY created_at DESC`
+  },
+  complaints: {
+    title: "Customer complaints",
+    dates: true,
+    cols: [["created_at", "Date", "dt"], ["booking_code", "Booking"], ["tech_code", "Technician ID"], ["full_name", "Technician"], ["service", "Service"], ["status", "Status"], ["description", "Complaint"], ["resolution", "Resolution"], ["resolved_by", "Resolved by"]],
+    sql: `SELECT k.created_at,b.booking_code,t.tech_code,t.full_name,sc.name service,k.status,k.description,k.resolution,u.name resolved_by FROM complaints k LEFT JOIN bookings b ON b.id=k.booking_id LEFT JOIN technicians t ON t.id=k.technician_id LEFT JOIN service_categories sc ON sc.id=b.category_id LEFT JOIN admin_users u ON u.id=k.resolved_by
+      WHERE (k.created_at ${IST})::date BETWEEN $1::date AND $2::date ORDER BY k.created_at DESC`
+  },
+  services: {
+    title: "Service category performance",
+    dates: true,
+    cols: [["service", "Service"], ["orders", "Orders", "num"], ["completed", "Completed", "num"], ["cancelled", "Cancelled", "num"], ["collected", "Cash collected", "money"], ["commission", "Commission", "money"], ["avg_order", "Avg order value", "money"], ["rating", "Avg rating", "num"], ["hours", "Avg hours to complete", "num"]],
+    sql: `SELECT sc.name service,count(b.id) orders,count(b.id) FILTER (WHERE b.work_status='completed') completed,count(b.id) FILTER (WHERE b.work_status='cancelled') cancelled,
+      COALESCE(sum(pay.collected),0) collected,COALESCE(sum(pay.commission),0) commission,
+      CASE WHEN count(pay.collected) FILTER (WHERE pay.collected>0)>0 THEN round(sum(pay.collected)/count(pay.collected) FILTER (WHERE pay.collected>0),2) ELSE 0 END avg_order,
+      (SELECT round(avg(r.rating),1) FROM reviews r JOIN bookings rb ON rb.id=r.booking_id WHERE rb.category_id=sc.id) rating,
+      round(avg(EXTRACT(epoch FROM (b.completed_at-b.created_at))/3600) FILTER (WHERE b.completed_at IS NOT NULL)::numeric,1) hours
+      FROM service_categories sc LEFT JOIN bookings b ON b.category_id=sc.id AND (b.created_at ${IST})::date BETWEEN $1::date AND $2::date
+      LEFT JOIN LATERAL (SELECT (SELECT sum(amount_collected) FROM payments p WHERE p.booking_id=b.id) collected,(SELECT sum(commission_amount) FROM technician_commission_ledger l WHERE l.booking_id=b.id) commission) pay ON true
+      WHERE sc.is_active OR b.id IS NOT NULL GROUP BY sc.id ORDER BY orders DESC,sc.sort_order`
+  }
+};
+var csvCell = (v, type) => {
+  if (v == null) return "";
+  if (v instanceof Date) v = type === "dt" || !type ? new Date(v).toLocaleString("sv-SE", { timeZone: "Asia/Kolkata" }).slice(0, 16) : v.toISOString().slice(0, 10);
+  let s = String(v);
+  if (type !== "money" && type !== "num" && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+};
+R("GET", "/reports/([a-z]+)", async (x) => {
+  const key = x.params[0], def = REP[key];
+  if (!def) throw new HttpError(404, "Unknown report");
+  const from = dateParam(x.query.from, "2000-01-01"), to = dateParam(x.query.to, "2999-12-31");
+  const rows = (await Q(def.sql, def.dates ? [from, to] : [])).rows;
+  if (x.query.format === "csv") {
+    await audit(PQ, x, "report.exported", "report", key, null, { rows: rows.length, from, to });
+    const csv = "\uFEFF" + [def.cols.map((c) => csvCell(c[1])).join(",")].concat(rows.map((r) => def.cols.map((c) => csvCell(r[c[0]], c[2])).join(","))).join("\r\n");
+    return { csv, filename: `quickfix-${key}-${(/* @__PURE__ */ new Date()).toLocaleDateString("sv-SE", { timeZone: "Asia/Kolkata" })}.csv` };
+  }
+  return { key, title: def.title, dates: def.dates, cols: def.cols, rows };
+});
+R("GET", "/analytics", async (x) => {
+  const to = dateParam(x.query.to, (/* @__PURE__ */ new Date()).toLocaleDateString("sv-SE", { timeZone: "Asia/Kolkata" }));
+  let from = dateParam(x.query.from, to);
+  const span = (new Date(to) - new Date(from)) / 864e5;
+  if (span < 0) throw bad("The start date is after the end date");
+  if (span > 800) throw bad("Choose a range of up to about two years");
+  const P = [from, to], bk = `(b.created_at ${IST})::date BETWEEN $1::date AND $2::date`, r = async (s, p) => (await Q(s, p || P)).rows;
+  const [tot, money, series, status, services, areas, sources, weekdays, techs, snap, outTop, people, quality] = await Promise.all([
+    r(`SELECT count(*) orders,count(*) FILTER (WHERE b.work_status='completed') completed,count(*) FILTER (WHERE b.work_status='cancelled') cancelled,count(*) FILTER (WHERE b.work_status NOT IN ('completed','cancelled')) open,
+       count(*) FILTER (WHERE fa.first_assigned IS NOT NULL) assigned,count(*) FILTER (WHERE EXISTS (SELECT 1 FROM payments p WHERE p.booking_id=b.id)) paid,
+       round(avg(EXTRACT(epoch FROM (fa.first_assigned-b.created_at))/3600) FILTER (WHERE fa.first_assigned IS NOT NULL)::numeric,1) hours_assign,
+       round(avg(EXTRACT(epoch FROM (b.completed_at-b.created_at))/3600) FILTER (WHERE b.completed_at IS NOT NULL)::numeric,1) hours_complete
+       FROM bookings b LEFT JOIN LATERAL (SELECT min(assigned_at) first_assigned FROM booking_assignments WHERE booking_id=b.id) fa ON true WHERE ${bk}`),
+    r(`SELECT (SELECT COALESCE(sum(amount_collected),0) FROM payments WHERE (paid_at ${IST})::date BETWEEN $1::date AND $2::date) collected,
+       (SELECT count(*) FROM payments WHERE (paid_at ${IST})::date BETWEEN $1::date AND $2::date) payments,
+       (SELECT COALESCE(sum(amount),0) FROM payment_adjustments WHERE kind='refund' AND (created_at ${IST})::date BETWEEN $1::date AND $2::date) refunds,
+       (SELECT COALESCE(sum(commission_amount),0) FROM technician_commission_ledger WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) commission,
+       (SELECT COALESCE(sum(amount_settled),0) FROM technician_settlements WHERE status='verified' AND (verified_at ${IST})::date BETWEEN $1::date AND $2::date) settled_in_range`),
+    r(`SELECT to_char(d,'YYYY-MM-DD') AS day,COALESCE(o.n,0) orders,COALESCE(c.n,0) completed,COALESCE(p.t,0) collected,COALESCE(l.t,0) commission
+       FROM generate_series($1::date,$2::date,interval '1 day') d
+       LEFT JOIN (SELECT (created_at ${IST})::date dd,count(*) n FROM bookings GROUP BY 1) o ON o.dd=d::date
+       LEFT JOIN (SELECT (completed_at ${IST})::date dd,count(*) n FROM bookings WHERE work_status='completed' GROUP BY 1) c ON c.dd=d::date
+       LEFT JOIN (SELECT (paid_at ${IST})::date dd,sum(amount_collected) t FROM payments GROUP BY 1) p ON p.dd=d::date
+       LEFT JOIN (SELECT (created_at ${IST})::date dd,sum(commission_amount) t FROM technician_commission_ledger GROUP BY 1) l ON l.dd=d::date ORDER BY d`),
+    r(`SELECT b.work_status s,count(*) n FROM bookings b WHERE ${bk} GROUP BY 1 ORDER BY n DESC`),
+    r(`SELECT sc.name,count(b.id) orders,count(b.id) FILTER (WHERE b.work_status='completed') completed,COALESCE(sum(pay.collected),0) collected,COALESCE(sum(pay.commission),0) commission
+       FROM service_categories sc LEFT JOIN bookings b ON b.category_id=sc.id AND ${bk}
+       LEFT JOIN LATERAL (SELECT (SELECT sum(amount_collected) FROM payments p WHERE p.booking_id=b.id) collected,(SELECT sum(commission_amount) FROM technician_commission_ledger l WHERE l.booking_id=b.id) commission) pay ON true
+       WHERE sc.is_active OR b.id IS NOT NULL GROUP BY sc.id ORDER BY orders DESC,collected DESC`),
+    r(`SELECT initcap(lower(trim(b.locality))) area,count(*) orders,COALESCE(sum(pay.collected),0) collected FROM bookings b LEFT JOIN LATERAL (SELECT sum(amount_collected) collected FROM payments p WHERE p.booking_id=b.id) pay ON true WHERE ${bk} GROUP BY 1 ORDER BY orders DESC LIMIT 8`),
+    r(`SELECT b.source s,count(*) n FROM bookings b WHERE ${bk} GROUP BY 1 ORDER BY n DESC`),
+    r(`SELECT EXTRACT(isodow FROM b.created_at ${IST})::int d,count(*) n FROM bookings b WHERE ${bk} GROUP BY 1 ORDER BY 1`),
+    r(`SELECT t.tech_code,t.full_name,count(b.id) FILTER (WHERE b.work_status='completed') jobs,count(b.id) assigned,COALESCE(sum(pay.collected),0) collected,COALESCE(sum(pay.commission),0) commission,(SELECT round(avg(rating),1) FROM reviews rv WHERE rv.technician_id=t.id) rating
+       FROM booking_assignments a JOIN bookings b ON b.id=a.booking_id AND ${bk} JOIN technicians t ON t.id=a.technician_id
+       LEFT JOIN LATERAL (SELECT (SELECT sum(amount_collected) FROM payments p WHERE p.booking_id=b.id AND p.technician_id=t.id) collected,(SELECT sum(commission_amount) FROM technician_commission_ledger l WHERE l.booking_id=b.id AND l.technician_id=t.id) commission) pay ON true
+       WHERE a.is_current GROUP BY t.id ORDER BY collected DESC,jobs DESC LIMIT 8`),
+    r(`SELECT (SELECT COALESCE(sum(commission_amount),0) FROM technician_commission_ledger) owed,(SELECT COALESCE(sum(amount_settled),0) FROM technician_settlements WHERE status='verified') settled,
+       (SELECT count(*) FROM technician_settlements WHERE status IN ('pending','submitted','rejected') AND due_date < (now() ${IST})::date) overdue,
+       (SELECT count(*) FROM technician_settlements WHERE status='submitted') awaiting_verification,
+       (SELECT count(*) FROM bookings b WHERE b.work_status NOT IN ('completed','cancelled') AND NOT EXISTS (SELECT 1 FROM booking_assignments a WHERE a.booking_id=b.id AND a.is_current)) unassigned,
+       (SELECT count(*) FROM bookings WHERE work_status NOT IN ('completed','cancelled')) open_now`, []),
+    r(`SELECT t.tech_code,t.full_name,COALESCE(l.owed,0)-COALESCE(s.settled,0) outstanding FROM technicians t LEFT JOIN (SELECT technician_id,sum(commission_amount) owed FROM technician_commission_ledger GROUP BY 1) l ON l.technician_id=t.id LEFT JOIN (SELECT technician_id,sum(amount_settled) settled FROM technician_settlements WHERE status='verified' GROUP BY 1) s ON s.technician_id=t.id WHERE COALESCE(l.owed,0)-COALESCE(s.settled,0) > 0 ORDER BY outstanding DESC LIMIT 5`, []),
+    r(`SELECT (SELECT count(*) FROM technicians) techs,(SELECT count(*) FROM technicians WHERE status='active') active,(SELECT count(*) FROM technicians WHERE verification_status IN ('pending','under_review')) pending_verification,(SELECT count(*) FROM technicians WHERE status='suspended') suspended,
+       (SELECT count(*) FROM technicians WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) new_techs,(SELECT count(*) FROM customers WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) new_customers,
+       (SELECT count(*) FROM (SELECT customer_id FROM bookings b WHERE ${bk} GROUP BY 1 HAVING count(*)>1) z) repeat_customers`),
+    r(`SELECT (SELECT round(avg(rating),1) FROM reviews WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) rating,(SELECT count(*) FROM reviews WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) reviews,
+       (SELECT count(*) FROM complaints WHERE (created_at ${IST})::date BETWEEN $1::date AND $2::date) complaints,(SELECT count(*) FROM complaints WHERE status IN ('open','investigating')) open_complaints`)
+  ]);
+  const n = (o, k) => Number(o[k] || 0), T = tot[0], M = money[0], K = snap[0];
+  return {
+    range: { from, to },
+    totals: {
+      orders: n(T, "orders"),
+      completed: n(T, "completed"),
+      cancelled: n(T, "cancelled"),
+      open: n(T, "open"),
+      assigned: n(T, "assigned"),
+      paid: n(T, "paid"),
+      hours_assign: T.hours_assign == null ? null : Number(T.hours_assign),
+      hours_complete: T.hours_complete == null ? null : Number(T.hours_complete),
+      collected: n(M, "collected"),
+      payments: n(M, "payments"),
+      refunds: n(M, "refunds"),
+      commission: n(M, "commission"),
+      settled_in_range: n(M, "settled_in_range")
+    },
+    series: series.map((s) => ({ day: s.day, orders: Number(s.orders), completed: Number(s.completed), collected: Number(s.collected), commission: Number(s.commission) })),
+    status: status.map((s) => ({ s: s.s, n: Number(s.n) })),
+    services: services.map((s) => ({ name: s.name, orders: Number(s.orders), completed: Number(s.completed), collected: Number(s.collected), commission: Number(s.commission) })),
+    areas: areas.map((s) => ({ area: s.area, orders: Number(s.orders), collected: Number(s.collected) })),
+    sources: sources.map((s) => ({ s: s.s, n: Number(s.n) })),
+    weekdays: weekdays.map((s) => ({ d: s.d, n: Number(s.n) })),
+    technicians: techs.map((t) => ({ tech_code: t.tech_code, full_name: t.full_name, jobs: Number(t.jobs), assigned: Number(t.assigned), collected: Number(t.collected), commission: Number(t.commission), rating: t.rating })),
+    snapshot: { owed: n(K, "owed"), settled: n(K, "settled"), outstanding: n(K, "owed") - n(K, "settled"), overdue: n(K, "overdue"), awaiting_verification: n(K, "awaiting_verification"), unassigned: n(K, "unassigned"), open_now: n(K, "open_now") },
+    outstanding_top: outTop.map((t) => ({ tech_code: t.tech_code, full_name: t.full_name, outstanding: Number(t.outstanding) })),
+    people: { techs: n(people[0], "techs"), active: n(people[0], "active"), pending_verification: n(people[0], "pending_verification"), suspended: n(people[0], "suspended"), new_techs: n(people[0], "new_techs"), new_customers: n(people[0], "new_customers"), repeat_customers: n(people[0], "repeat_customers") },
+    quality: { rating: quality[0].rating == null ? null : Number(quality[0].rating), reviews: n(quality[0], "reviews"), complaints: n(quality[0], "complaints"), open_complaints: n(quality[0], "open_complaints") }
+  };
+});
 var J = (code, body, extra) => ({ statusCode: code, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra || {} }, body: JSON.stringify(body) });
 exports.handler = async (event) => {
   try {
@@ -5996,6 +6465,7 @@ exports.handler = async (event) => {
         }
       }
       const out = await fn(x);
+      if (out && out.csv !== void 0) return { statusCode: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${out.filename}"`, "Cache-Control": "no-store" }, body: out.csv };
       return out && out.cookie ? J(200, out.body, { "Set-Cookie": out.cookie }) : J(200, out);
     }
     throw new HttpError(404, "Not found");

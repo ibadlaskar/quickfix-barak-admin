@@ -43,21 +43,62 @@ function note(title, ok) {
     d.showModal(); d.onclose = function () { res(d.returnValue === 'ok' ? $('#nn').value.trim() : null); };
   });
 }
+function inr(n) { return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+function modal(title, body, ok, getVals) {
+  return new Promise(function (res) {
+    var d = $('#dlg'), out = null;
+    d.innerHTML = '<form method="dialog"><h2>' + esc(title) + '</h2>' + body + '<p class="err" id="re"></p><div class="row"><button class="btn o" value="ok">' + esc(ok) + '</button><button class="btn ghost" value="cancel" formnovalidate>Cancel</button></div></form>';
+    d.showModal();
+    $('form', d).onsubmit = function (e) { if (e.submitter.value !== 'ok') return; var r = getVals(d); if (typeof r === 'string') { e.preventDefault(); $('#re').textContent = r; } else out = r; };
+    d.onclose = function () { res(d.returnValue === 'ok' ? out : null); };
+  });
+}
+var METH = '<option value="cash">Cash</option><option value="upi">UPI</option><option value="bank">Bank transfer</option><option value="other">Other</option>';
+async function moneyView() {
+  var m; try { m = await api('/tech/money'); } catch (e) { if (e.status === 401) { me = null; return loginView('Please sign in again.'); } toast(e.message); return; }
+  app.innerHTML = head(true) + '<div class="wrap"><p style="margin:14px 0 0">Hello, <b>' + esc(me.name) + '</b> <span class="badge">' + esc(me.tech_code) + '</span></p>' + tabs('money') +
+    '<div class="card"><h3>Money to send to QuickFix</h3><div class="idbox" style="margin:6px 0">' + inr(m.outstanding) + '</div><p class="m" style="color:var(--m);margin:0">Commission owed ' + inr(m.owed) + ' · already received by QuickFix ' + inr(m.settled) + '<br>Total cash you collected from customers: ' + inr(m.collected) + '</p></div>' +
+    '<h3 style="margin:14px 0 8px">Settlements</h3>' + (m.settlements.length ? m.settlements.map(function (s) {
+      var can = s.status === 'pending' || s.status === 'rejected';
+      return '<div class="job"><div class="top2"><div><h3>' + inr(s.commission_due) + '</h3><div class="m">Due ' + esc(String(s.due_date).slice(0, 10)) + '</div></div><span class="badge b-' + esc(s.status) + '">' + esc(label(s.status)) + '</span></div><p class="m">Received so far ' + inr(s.amount_settled) + ' · Balance ' + inr(s.balance) + '</p>' + (s.status === 'rejected' && s.reject_reason ? '<p class="err">Office says: ' + esc(s.reject_reason) + '</p>' : '') + (s.status === 'submitted' ? '<p class="m">You reported ' + inr(s.submitted_amount) + '. Waiting for the office to confirm.</p>' : '') +
+        (can ? '<button class="btn o next" data-sub="' + esc(s.id) + '" data-bal="' + esc(s.balance) + '">I have sent the money</button>' : '') + '</div>';
+    }).join('') : '<div class="card"><p class="empty" style="margin:0">No settlements yet. The office creates one when commission is due.</p></div>') +
+    '<p style="text-align:center"><button class="btn ghost" id="rf">Refresh</button></p></div>';
+  bar(); wireTabs();
+  document.querySelectorAll('[data-sub]').forEach(function (b) {
+    b.onclick = async function () {
+      var v = await modal('Report your payment', '<div class="note">The office checks their account and confirms. Your report does not close the settlement by itself.</div><label class="fl">Amount sent (₹)<input id="sa" type="number" min="1" step="0.01" value="' + esc(b.dataset.bal) + '"></label><p><label class="fl">How did you pay?<select id="sm">' + METH.replace('<option value="cash">', '<option value="upi">UPI</option><option value="cash">').replace('<option value="upi">UPI</option><option value="bank">', '<option value="bank">') + '</select></label></p><label class="fl">UPI / transfer reference number<input id="sr" autocomplete="off"></label>', 'Submit', function () { if (!(Number($('#sa').value) > 0)) return 'Enter the amount.'; if ($('#sm').value !== 'cash' && $('#sr').value.trim().length < 3) return 'Enter the reference number.'; return { amount: $('#sa').value, method: $('#sm').value, reference: $('#sr').value.trim() }; });
+      if (!v) return; try { await api('/tech/settlements/' + b.dataset.sub + '/submit', { method: 'POST', body: v }); toast('Reported. Waiting for the office.'); moneyView(); } catch (er) { toast(er.message); }
+    };
+  });
+  $('#rf').onclick = moneyView; clearInterval(timer);
+}
+function tabs(on) { return '<div class="tabs"><button id="t1" class="' + (on === 'open' ? 'on' : '') + '">Open jobs</button><button id="t2" class="' + (on === 'done' ? 'on' : '') + '">Completed</button><button id="t3" class="' + (on === 'money' ? 'on' : '') + '">Money</button></div>'; }
+function wireTabs() { $('#t1').onclick = function () { scope = 'open'; jobsView(); }; $('#t2').onclick = function () { scope = 'done'; jobsView(); }; $('#t3').onclick = function () { scope = 'money'; jobsView(); }; }
 async function jobsView(silent) {
+  if (scope === 'money') return moneyView();
   if (!me) return loginView();
   var jobs; try { jobs = await api('/tech/jobs?scope=' + scope); } catch (e) { if (e.status === 401) { me = null; return loginView('Please sign in again.'); } toast(e.message); return; }
   var open = scope === 'open';
-  app.innerHTML = head(true) + '<div class="wrap"><p style="margin:14px 0 0">Hello, <b>' + esc(me.name) + '</b> <span class="badge">' + esc(me.tech_code) + '</span></p><div class="tabs"><button id="t1" class="' + (open ? 'on' : '') + '">My open jobs</button><button id="t2" class="' + (open ? '' : 'on') + '">Completed</button></div>' +
+  app.innerHTML = head(true) + '<div class="wrap"><p style="margin:14px 0 0">Hello, <b>' + esc(me.name) + '</b> <span class="badge">' + esc(me.tech_code) + '</span></p>' + tabs(open ? 'open' : 'done') +
     (jobs.length ? jobs.map(function (j) {
       var n = NEXT[j.work_status], maps = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(j.address + ', ' + j.locality);
       return '<div class="job"><div class="top2"><div><h3>' + esc(j.service) + '</h3><div class="m">' + esc(j.booking_code) + '</div></div><span class="badge b-' + esc(j.work_status) + '">' + esc(label(j.work_status)) + '</span></div>' +
         '<p><b>' + esc(fmt(j.preferred_at)) + '</b></p><p>' + esc(j.customer_name) + '<br>' + esc(j.address) + ', ' + esc(j.locality) + '</p>' + (j.problem ? '<p class="m">Problem: ' + esc(j.problem) + '</p>' : '') + (Number(j.inspection_fee) > 0 ? '<p class="m">Inspection fee: ₹' + esc(j.inspection_fee) + '</p>' : '') +
         (j.customer_mobile ? '<div class="acts"><a class="btn ghost" href="tel:+91' + esc(j.customer_mobile) + '">Call</a><a class="btn ghost" target="_blank" rel="noopener" href="https://wa.me/91' + esc(j.customer_mobile) + '">WhatsApp</a><a class="btn ghost" target="_blank" rel="noopener" href="' + maps + '">Map</a></div>' : '') +
+        (Number(j.quote_total) > 0 ? '<p class="m">Quote ' + inr(j.quote_total) + ' (' + esc(label(j.quote_status)) + ')</p>' : '') + (Number(j.paid) > 0 ? '<p class="m"><b>Payment recorded: ' + inr(j.paid) + '</b></p>' : '') +
+        ((j.work_status === 'in_progress' || j.work_status === 'completed') && !(Number(j.paid) > 0) ? '<button class="btn g next" data-pay="' + esc(j.booking_code) + '" data-q="' + esc(j.quote_total || '') + '">Record payment collected</button>' : '') +
         (open && n ? '<button class="btn o next" data-c="' + esc(j.booking_code) + '" data-s="' + n[0] + '" data-l="' + n[1] + '">' + n[1] + '</button>' : '') + '</div>';
     }).join('') : '<div class="card"><p class="empty" style="margin:0">' + (open ? 'No open jobs right now. New jobs appear here when the office assigns them to you.' : 'No completed jobs yet.') + '</p></div>') +
     '<p style="text-align:center"><button class="btn ghost" id="rf">Refresh</button></p></div>';
   bar();
-  $('#t1').onclick = function () { scope = 'open'; jobsView(); }; $('#t2').onclick = function () { scope = 'done'; jobsView(); }; $('#rf').onclick = function () { jobsView(); };
+  wireTabs(); $('#rf').onclick = function () { jobsView(); };
+  document.querySelectorAll('[data-pay]').forEach(function (b) {
+    b.onclick = async function () {
+      var v = await modal('Payment for ' + b.dataset.pay, '<div class="note">Enter what the customer actually paid you. QuickFix commission is worked out from your agreement.' + (b.dataset.q && Number(b.dataset.q) > 0 ? ' Quote: ' + inr(b.dataset.q) + '.' : '') + '</div><div class="grid2"><label class="fl">Labour (₹)<input id="pl" type="number" min="0" step="0.01"></label><label class="fl">Parts (₹)<input id="pa" type="number" min="0" step="0.01"></label><label class="fl">Discount (₹)<input id="pd" type="number" min="0" step="0.01"></label><label class="fl">Total collected (₹) *<input id="pc" type="number" min="1" step="0.01" value="' + esc(b.dataset.q || '') + '"></label></div><p><label class="fl">Paid by<select id="pm">' + METH + '</select></label></p>', 'Save payment', function () { if (!(Number($('#pc').value) > 0)) return 'Enter the total collected.'; return { labour: $('#pl').value, parts: $('#pa').value, discount: $('#pd').value, collected: $('#pc').value, method: $('#pm').value }; });
+      if (!v) return; try { var r = await api('/tech/jobs/' + b.dataset.pay + '/payment', { method: 'POST', body: v }); toast('Saved. Receipt ' + r.receipt_no + '. Commission ' + inr(r.commission)); jobsView(); } catch (er) { toast(er.message); }
+    };
+  });
   document.querySelectorAll('[data-s]').forEach(function (b) {
     b.onclick = async function () {
       var r = await note(b.dataset.l + '? (' + b.dataset.c + ')', 'Confirm'); if (r === null) return;

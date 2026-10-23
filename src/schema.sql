@@ -193,6 +193,22 @@ DO $$ BEGIN
  END IF;
 END $$;
 
+-- ===== Stage 3 additions (idempotent) =====
+CREATE SEQUENCE IF NOT EXISTS receipt_seq START 1;
+ALTER TABLE technician_agreements DROP CONSTRAINT IF EXISTS technician_agreements_commission_rate_check;
+ALTER TABLE technician_agreements DROP CONSTRAINT IF EXISTS qfb_rate_range;
+ALTER TABLE technician_agreements ALTER COLUMN commission_rate TYPE numeric(10,2);
+ALTER TABLE technician_agreements ADD CONSTRAINT qfb_rate_range CHECK (commission_rate >= 0 AND commission_rate <= 100000);
+ALTER TABLE technician_commission_ledger ALTER COLUMN rate TYPE numeric(10,2);
+ALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS submitted_amount numeric(10,2);
+ALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS submitted_at timestamptz;
+ALTER TABLE technician_settlements ADD COLUMN IF NOT EXISTS reject_reason text;
+ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS pos int NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS settlement_item_once ON settlement_items(ledger_id);
+CREATE INDEX IF NOT EXISTS payments_paid_idx ON payments(paid_at);
+CREATE INDEX IF NOT EXISTS payments_booking_idx ON payments(booking_id);
+CREATE INDEX IF NOT EXISTS ledger_booking_idx ON technician_commission_ledger(booking_id);
+
 -- Lock the tables away from Supabase's public Data API (anon/authenticated keys).
 -- The server connects with the database owner role, which is unaffected.
 DO $$ DECLARE r record; BEGIN

@@ -1,47 +1,38 @@
-# QuickFix Barak Admin Panel: Stage 2
+# QuickFix Barak Admin Panel: Stage 3
 
-Adds bookings, technician matching and assignment, a technician portal, and the new service list on top of Stage 1.
+Stage 3 adds quotes, cash collection and commission, settlements, reports with CSV export, and an Analytics tab.
 
-## UPGRADING from Stage 1 (you already have it running)
-1. In Netlify open your site, then **Deploys**, and drag in this unzipped folder (or the ZIP) as a new deploy. Keep your 3 environment variables as they are. You do NOT need SETUP_TOKEN again.
-2. Open your admin site and sign in. The first request upgrades the database by itself, safely, without losing data:
-   - adds the new columns and tables,
-   - changes the service list to the 6 services below (old names are renamed or retired, never deleted, so existing technicians keep their skills where the service still exists).
-3. Check **Service categories** in the sidebar. Check each technician's approved services (Edit profile), because retired services such as Refrigerator repair no longer appear.
+## UPGRADING from Stage 2
+1. In Netlify open your site, then **Deploys**, and drag in this folder as a new deploy. Keep your 3 environment variables. You do NOT need SETUP_TOKEN.
+2. Sign in. The first request upgrades the database by itself and keeps all your data.
 
 ## NEW INSTALL
-Follow the Stage 1 steps: Supabase pooler connection string, Netlify variables (DATABASE_URL, SESSION_SECRET, SETUP_TOKEN), open /setup.html, create tables, create the owner. Then delete SETUP_TOKEN.
+Supabase pooler connection string, Netlify variables (DATABASE_URL, SESSION_SECRET, SETUP_TOKEN), open /setup.html, create tables, create the owner, then delete SETUP_TOKEN.
 
-## Services now offered
-1. Electrical Works, Estimating & Costing
-2. Plumbing
-3. Home Cleaning
-4. Water Tank Cleaning
-5. AC Servicing
-6. Metal Fabrication, Estimating & Costing
+## How money works
+1. **Quote.** On a booking, create a quote (labour, parts, travel, other). Mark it accepted or rejected by the customer before repair starts. Revising replaces the old one and needs fresh approval.
+2. **Payment.** After work starts, the technician records what the customer paid in their portal (or you record it on the booking). Fields: labour, parts, discount, total collected, method. A receipt number (QFR-YYMM-00001) is created.
+3. **Commission** is worked out from the technician's agreement:
+   - *Labour only*: rate % of (labour minus discount).
+   - *Labour and parts*: rate % of (labour plus parts minus discount).
+   - *Fixed per job*: the rate field is a rupee amount.
+   - *Custom rule*: the office enters the commission on the payment.
+   You can override the commission when you record a payment yourself.
+4. **Ledger.** Every commission, refund reversal and adjustment is a ledger line. Payments and refunds are never edited. Corrections are new lines.
+5. **Refunds** (admin only, reason required) reduce the technician's commission in the same proportion.
+6. **Settlement.** On a technician's profile or the Settlements page, press **Create settlement** to bundle all unsettled commission. The technician pays you by UPI, bank or cash and presses **I have sent the money** in the portal with the reference. Nothing closes until **you** press **Confirm money received** after seeing it in your account. Part payments are fine; the balance stays outstanding.
+7. A technician can never verify their own settlement.
 
-You can add, rename, set an inspection fee for, reorder, or retire services in **Service categories**.
+## Analytics tab
+Pick Today, 7 / 30 / 90 days, this or last month, this year, or any dates. You get: orders received, completed, cancelled and open; completion rate; cash collected net of refunds; QuickFix commission; technician earnings; average order value; money owed by technicians; ratings and complaints; new and repeat customers; time to assign and complete; orders and money over time; orders by status, service, area, source and weekday; order funnel; technician leaderboard; and cash health.
 
-## Taking an order and assigning a technician
-1. **Bookings, New booking**. Enter the customer's mobile first (returning customers fill in automatically), then name, address, area, service, preferred time and the problem.
-2. Open the booking and press **Find technician**. You see only technicians who are **active, verified and approved for that service**, best match first: same area, then fewest open jobs, then rating. You can change the area, tick "Only this area", and see how many jobs each person already has that day.
-3. Press **Assign**. To change technician later, press Reassign (a reason is required). Every step is recorded in the booking's activity log.
-4. You can also reschedule (reason required), change status, or cancel (reason required).
+## Reports (Reports page, with CSV download)
+Cash collections, commission earned, outstanding settlements, settlements received, refunds and adjustments, technician performance and jobs completed, technician onboarding and verification, customer complaints, service category performance. Every CSV download is recorded in the activity log. CSVs can contain personal details: keep them private.
 
-## Technician portal
-1. Open the technician's profile and press **Enable portal login**. A temporary password is shown ONCE. Send it with the **Send on WhatsApp** button.
-2. The technician opens `https://YOUR-SITE/tech.html` and signs in with their **Technician ID or mobile number** plus the password. They must set their own password at first login.
-3. They see only their own assigned jobs, with customer name, address, call, WhatsApp and map buttons, and move each job along: On my way, I have arrived, Start work, Mark job completed. You see these updates on the booking.
-4. Only **active and verified** technicians can sign in. Suspending or deactivating a technician blocks the portal immediately. Use **Reset password** or **Revoke access** on the profile any time.
-5. Five wrong passwords lock that technician for 15 minutes.
+## Earlier stages (still included)
+Bookings and matching, technician portal at /tech.html, technician onboarding and verification, service categories, audit log.
 
-Why a password and not just a mobile number: a mobile number or ID is easy to guess, so on its own it would let anyone read customers' addresses and phone numbers. SMS one-time codes can be added later with a provider such as Firebase or MSG91.
-
-## Not in this stage (Stage 3)
-Cash collection and commission ledger, settlement verification, reports and CSV export, quotations, and customer reviews entry.
-
-## If the API does not work after a drag-and-drop deploy
-Put this folder in a GitHub repository and import it in Netlify (settings are in `netlify.toml`).
-
-## Rebuilding the function (only if you change src/)
-`npm install` then `npm run build`.
+## Notes
+- Times are shown in Indian Standard Time.
+- If the API does not work after a drag-and-drop deploy, put the folder in GitHub and import it in Netlify.
+- Rebuilding the function (only if you edit src/): `npm install` then `npm run build`.

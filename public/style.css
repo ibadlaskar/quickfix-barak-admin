@@ -36,3 +36,13 @@ dialog{border:0;border-radius:16px;padding:22px;max-width:440px;width:92%;box-sh
 @media print{.side,.top,.noprint,#toast{display:none!important}.pad{max-width:none;padding:0}.card{break-inside:avoid}body{background:#fff}}
 
 .b-requested,.b-confirmed{background:#fff3d6;color:var(--y)}.b-assigned,.b-en_route,.b-arrived,.b-diagnosing,.b-in_progress,.b-quote_pending,.b-quote_accepted{background:#e6f0ff;color:var(--n)}.b-completed{background:#dff5e8;color:var(--g)}.b-cancelled,.b-disputed,.b-quote_rejected{background:#fde4e2;color:var(--r)}
+
+.b-accepted,.b-resolved{background:#dff5e8;color:var(--g)}.b-rejected,.b-dismissed,.b-open{background:#fde4e2;color:var(--r)}.b-submitted,.b-investigating{background:#e6f0ff;color:var(--n)}.b-superseded{background:#e9edf5;color:var(--m)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px;align-items:center}.chip{display:inline-block;border:1.5px solid var(--n);color:var(--n);background:#fff;border-radius:99px;padding:5px 14px;font-size:14px;font-weight:600;text-decoration:none}.chip.on{background:var(--n);color:#fff}
+.chip.cu{display:inline-flex;gap:6px;align-items:center;border-style:dashed}.chip.cu input{width:auto;padding:4px 8px;font-size:13px}
+.stat .ks{display:block;color:var(--m);font-size:12px;margin-top:2px}.chart{width:100%;height:auto;display:block}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--m);margin-top:6px}.legend.col{flex-direction:column;gap:5px}.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.donut{width:130px;height:130px;border-radius:50%;display:grid;place-items:center;position:relative;flex:none}.donut::after{content:"";position:absolute;inset:26px;background:#fff;border-radius:50%}.donut b{position:relative;z-index:1;font-size:22px;color:var(--n)}
+.hb{margin:9px 0}.hb .hl{display:flex;justify-content:space-between;gap:10px;font-size:14px}.hb .ht{height:9px;background:#e9edf5;border-radius:6px;margin-top:3px}.hb .ht div{height:100%;border-radius:6px}.hb small{color:var(--m)}
+tfoot td{border-top:2px solid var(--l);background:#f7f9fd}
+@media(max-width:560px){.cards{grid-template-columns:1fr 1fr;gap:8px}.stat{padding:10px}.stat b{font-size:20px}.stat span{font-size:12px}}
